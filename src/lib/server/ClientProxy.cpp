@@ -39,11 +39,14 @@ deskflow::IStream *ClientProxy::getStream() const
   return m_stream;
 }
 
-void ClientProxy::keyboardFollow(bool isTarget)
+void ClientProxy::keyboardFollow(bool isTarget, bool followMode)
 {
   // clients older than protocol 1.9 cannot request the keyboard, so there is
   // nothing to tell them about it
-  LOG_VERBOSE("keyboard follow state %d not sent to \"%s\" (protocol < 1.9)", isTarget ? 1 : 0, getName().c_str());
+  LOG_VERBOSE(
+      "keyboard follow state (target=%d mode=%d) not sent to \"%s\" (protocol < 1.9)", isTarget ? 1 : 0, followMode ? 1 : 0,
+      getName().c_str()
+  );
 }
 
 void *ClientProxy::getEventTarget() const

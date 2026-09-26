@@ -28,12 +28,13 @@ public:
   ClientProxy1_9 &operator=(ClientProxy1_9 const &) = delete;
   ClientProxy1_9 &operator=(ClientProxy1_9 &&) = delete;
 
-  void keyboardFollow(bool isTarget) override;
+  void keyboardFollow(bool isTarget, bool followMode) override;
   bool parseMessage(const uint8_t *code) override;
   bool keyboardFollowRequested();
 
 private:
   bool m_isKeyboardFollowTarget = false;
+  bool m_keyboardFollowMode = false;
 
   // ClientProxy1_6 keeps its event queue private, so keep our own reference
   IEventQueue *m_eventQueue = nullptr;

@@ -27,7 +27,7 @@ const char *const kMsgCKeepAlive = "CALV";
 // Keyboard follow mode (protocol 1.9): the secondary asks for the keyboard when
 // its own physical mouse moves, the primary reports who holds the keyboard.
 const char *const kMsgCKeyboardFollow = "CKBF%4i";
-const char *const kMsgDKeyboardFollow = "DKBF%1i";
+const char *const kMsgDKeyboardFollow = "DKBF%1i%1i";
 
 // This is weird, it goes from DKDN to DKDL. Someone misunderstood the pattern (keep the
 // code, pick the form by negotiated version). Do not copy this.

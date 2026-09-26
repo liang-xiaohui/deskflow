@@ -150,6 +150,21 @@ public:
     return true;
   }
 
+  //! Keep this computer's own cursor visible while keyboard follow mode is on
+  /*!
+  A secondary normally hides its cursor when it is enabled, because the cursor
+  it shows is the one driven by the server.  In keyboard follow mode the server
+  never drives it, so the cursor of every computer belongs to that computer's
+  own mouse and must stay visible.  The server announces the mode with
+  kMsgDKeyboardFollow, but the message may arrive before or after enable(), so
+  implementations should be able to apply it either way.
+  */
+  virtual void setKeyboardFollowLocalCursor(bool keepVisible)
+  {
+    // platforms whose secondary never hides its cursor need nothing here
+    (void)keepVisible;
+  }
+
   //! Set clipboard sequence number
   /*!
   Sets the sequence number to use in subsequent clipboard events.

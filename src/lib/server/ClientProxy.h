@@ -37,13 +37,13 @@ public:
   */
   void close(const char *msg) const;
 
-  //! Tell the client whether it currently holds the keyboard
+  //! Tell the client about the keyboard follow state
   /*!
   Only used in keyboard follow mode (server/keyboardFollow). Clients that
   negotiated protocol 1.9 or later implement this; for older clients it is a
   no-op and keyboard follow mode is unavailable for them.
   */
-  virtual void keyboardFollow(bool isTarget);
+  virtual void keyboardFollow(bool isTarget, bool followMode);
 
   //@}
   //! @name accessors

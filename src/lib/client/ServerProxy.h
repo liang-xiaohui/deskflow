@@ -75,7 +75,7 @@ protected:
   void keyRepeat(uint16_t id, uint16_t mask, uint16_t count, uint16_t button, const std::string &lang);
 
   //! Forward the keyboard follow state received from the server
-  void keyboardFollowChanged(bool isTarget);
+  void keyboardFollowChanged(bool isTarget, bool followMode);
 
   deskflow::IStream *getStream() const
   {

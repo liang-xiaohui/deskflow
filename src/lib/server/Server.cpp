@@ -1581,20 +1581,25 @@ void Server::setKeyboardTarget(BaseClientProxy *target)
   m_screen->getPlatformScreen()->setKeyboardFollowDivert(m_keyboardTarget != nullptr);
 
   if (oldTarget != nullptr) {
-    if (auto *proxy = dynamic_cast<ClientProxy *>(oldTarget); proxy != nullptr) {
-      proxy->keyboardFollow(false);
-    }
+    notifyKeyboardFollow(oldTarget, false);
   }
   if (m_keyboardTarget != nullptr) {
-    if (auto *proxy = dynamic_cast<ClientProxy *>(m_keyboardTarget); proxy != nullptr) {
-      proxy->keyboardFollow(true);
-    }
+    notifyKeyboardFollow(m_keyboardTarget, true);
   }
 
   LOG_INFO(
       "keyboard follow: the keyboard is now on \"%s\"",
       getName(m_keyboardTarget != nullptr ? m_keyboardTarget : m_active).c_str()
   );
+}
+
+void Server::notifyKeyboardFollow(BaseClientProxy *client, bool isTarget)
+{
+  // PrimaryClient is not a ClientProxy, and clients older than 1.9 cannot take
+  // part in keyboard follow mode; both are a no-op
+  if (auto *proxy = dynamic_cast<ClientProxy *>(client); proxy != nullptr) {
+    proxy->keyboardFollow(isTarget, m_keyboardFollow);
+  }
 }
 
 void Server::handleKeyboardFollowRequest(BaseClientProxy *client)
@@ -2001,6 +2006,11 @@ bool Server::addClient(BaseClientProxy *client)
   // add to list
   m_clientSet.insert(client);
   m_clients.try_emplace(name, client);
+
+  // tell the client about the keyboard follow mode right away: it may never
+  // receive the keyboard, but it still has to know that this computer keeps the
+  // cursor to itself (see kMsgDKeyboardFollow)
+  notifyKeyboardFollow(client, client == m_keyboardTarget);
 
   // initialize client data
   int32_t x;

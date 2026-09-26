@@ -158,12 +158,12 @@ B: 轮询发现光标移动 ──┐
                      ▼
 A: ClientProxy1_9 ──► ServerKeyboardFollowRequested ──► setKeyboardTarget(B)
                                                         ├─ hook: 键盘改为吞键
-                                                        └─ DKBF(1) ──► B: m_isKeyboardFollowTarget = true
+                                                        └─ DKBF(1,1) ──► B: m_isKeyboardFollowTarget = true
 A: 用户敲键 ──► WH_KEYBOARD_LL(吞) ──► DESKFLOW_MSG_KEY ──► Server::onKeyDown
                                         └─ keyboardSink()==B ──► DKDL/DKUP ──► B: fakeKeyDown 注入
 B: 用户移动自己的鼠标 ──► A 的 onMouseMovePrimary ──► setKeyboardTarget(nullptr)
                                                       └─ hook: 键盘放行回本地
-                                                      └─ DKBF(0) ──► B: fakeAllKeysUp()
+                                                      └─ DKBF(0,1) ──► B: fakeAllKeysUp()
 ```
 
 ---
@@ -177,16 +177,16 @@ B: 用户移动自己的鼠标 ──► A 的 onMouseMovePrimary ──► setK
 | 文件 | 类型 | 内容 |
 |---|---|---|
 | `src/lib/deskflow/ProtocolTypes.h` | 改 | `kProtocolMinorVersion` 8→9；新增 `kMsgCKeyboardFollow` / `kMsgDKeyboardFollow` 声明（含 Doxygen，标记 `@since Protocol version 1.9`） |
-| `src/lib/deskflow/ProtocolTypes.cpp` | 改 | `"CKBF%4i"`（Secondary→Primary，seq）、`"DKBF%1i"`（Primary→Secondary，1/0） |
+| `src/lib/deskflow/ProtocolTypes.cpp` | 改 | `"CKBF%4i"`（Secondary→Primary，seq）、`"DKBF%1i%1i"`（Primary→Secondary：是否持有键盘 / KFM 是否开启） |
 
 ### 4.2 服务端
 
 | 文件 | 类型 | 内容 |
 |---|---|---|
-| `src/lib/server/Server.h` | 改 | 新增成员 `m_keyboardFollow` / `m_keyboardTarget`；新增 `keyboardSink()`、`setKeyboardTarget()`、`handleKeyboardFollowRequest()` |
-| `src/lib/server/Server.cpp` | 改 | ① include `common/Settings.h`；② 构造函数读取 `server/keyboardFollow`；③ `onKeyDown/onKeyUp/onKeyRepeat` 的 sink 由 `m_active` 改为 `keyboardSink()`；④ `onMouseMovePrimary` 开头加 KFM 分支（清 target + return，**不碰几何/越界**）；⑤ 新增三个方法；⑥ `jumpToScreen()` 与 `switchScreen()` 开头 KFM 短路；⑦ `addClient` 注册 `ServerKeyboardFollowRequested` handler，`removeClient` 注销并在必要时收回键盘 |
-| `src/lib/server/ClientProxy.h` / `.cpp` | 改 | 新增 `virtual void keyboardFollow(bool)`，基类实现为空操作（协议 <1.9 的客户端收不到） |
-| `src/lib/server/ClientProxy1_9.h` / `.cpp` | 新 | 解析 `CKBF` → 发 `ServerKeyboardFollowRequested` 事件；覆写 `keyboardFollow(bool)` 发送 `DKBF` |
+| `src/lib/server/Server.h` | 改 | 新增成员 `m_keyboardFollow` / `m_keyboardTarget`；新增 `keyboardSink()`、`setKeyboardTarget()`、`notifyKeyboardFollow()`、`handleKeyboardFollowRequest()` |
+| `src/lib/server/Server.cpp` | 改 | ① include `common/Settings.h`；② 构造函数读取 `server/keyboardFollow`；③ `onKeyDown/onKeyUp/onKeyRepeat` 的 sink 由 `m_active` 改为 `keyboardSink()`；④ `onMouseMovePrimary` 开头加 KFM 分支（清 target + return，**不碰几何/越界**）；⑤ 新增四个方法；⑥ `jumpToScreen()` 与 `switchScreen()` 开头 KFM 短路；⑦ `addClient` 注册 `ServerKeyboardFollowRequested` handler 并**立刻**下发一次 `DKBF(是否持有, KFM是否开启)`（客户端可能永远拿不到键盘，但必须知道模式已开），`removeClient` 注销并在必要时收回键盘 |
+| `src/lib/server/ClientProxy.h` / `.cpp` | 改 | 新增 `virtual void keyboardFollow(bool isTarget, bool followMode)`，基类实现为空操作（协议 <1.9 的客户端收不到） |
+| `src/lib/server/ClientProxy1_9.h` / `.cpp` | 新 | 解析 `CKBF` → 发 `ServerKeyboardFollowRequested` 事件；覆写 `keyboardFollow()` 发送 `DKBF`（带缓存，状态没变不重发） |
 | `src/lib/server/ClientProxyUnknown.cpp` | 改 | `initProxy()` 加 `case 9:` |
 | `src/lib/server/CMakeLists.txt` | 改 | 登记 `ClientProxy1_9.*` |
 | `src/lib/base/EventTypes.h` | 改 | 新增 `ServerKeyboardFollowRequested` |
@@ -195,19 +195,19 @@ B: 用户移动自己的鼠标 ──► A 的 onMouseMovePrimary ──► setK
 
 | 文件 | 类型 | 内容 |
 |---|---|---|
-| `src/lib/client/ServerProxy.h` / `.cpp` | 改 | 新增 `virtual void onLocalMouseActivity(uint32_t)`（基类空实现）+ protected `keyboardFollowChanged(bool)` 转发到 `Client` |
-| `src/lib/client/ServerProxy1_9.h` / `.cpp` | 新 | 覆写 `onLocalMouseActivity()` 发送 `CKBF`；`parseMessage` 解析 `DKBF` → `keyboardFollowChanged()` |
-| `src/lib/client/Client.h` / `.cpp` | 改 | ① `setupScreen()` 加 `case 9:`（`ServerProxy1_9` + `m_keyboardFollowSupported=true`）；② `handshakeComplete()` 启动跟随定时器；③ `cleanup()` 清理定时器；④ 新增 `setupFollowTimer/cleanupFollowTimer/handleFollowTimer/keyboardFollowChanged`；⑤ 文件级常量 `kFollowPollInterval=0.04s` / `kFollowMoveThreshold=4px` / `kFollowClaimCooldownTicks=5`（=200ms 限流） |
+| `src/lib/client/ServerProxy.h` / `.cpp` | 改 | 新增 `virtual void onLocalMouseActivity(uint32_t)`（基类空实现）+ protected `keyboardFollowChanged(bool isTarget, bool followMode)` 转发到 `Client` |
+| `src/lib/client/ServerProxy1_9.h` / `.cpp` | 新 | 覆写 `onLocalMouseActivity()` 发送 `CKBF`；`parseMessage` **与 `parseHandshakeMessage`** 都要解析 `DKBF`（服务端在刚连上时就下发模式，可能早于握手完成） |
+| `src/lib/client/Client.h` / `.cpp` | 改 | ① `setupScreen()` 加 `case 9:`（`ServerProxy1_9` + `m_keyboardFollowSupported=true`）；② `handshakeComplete()`：`enable()` **之后**再应用一次 `setKeyboardFollowLocalCursor()`（模式可能早于 enable 到达，而 enable 会藏光标）+ 启动跟随定时器；③ `cleanup()` 清理定时器；④ 新增 `setupFollowTimer/cleanupFollowTimer/handleFollowTimer/keyboardFollowChanged`；⑤ 常量 `kFollowPollInterval=0.04s` / `kFollowMoveThreshold=4px` / `kFollowClaimCooldownTicks=5`（=200ms 限流） |
 | `src/lib/client/CMakeLists.txt` | 改 | 登记 `ServerProxy1_9.*` |
 
 ### 4.4 平台层（Windows）
 
 | 文件 | 类型 | 内容 |
 |---|---|---|
-| `src/lib/deskflow/IPlatformScreen.h` | 改 | 新增两个**非纯虚**默认实现：`setKeyboardFollowDivert(bool)`（默认只打日志）、`getLocalCursorPos(int32_t&, int32_t&) const`（默认转发 `getCursorPos`，保证其它平台老代码零改动即可编译） |
+| `src/lib/deskflow/IPlatformScreen.h` | 改 | 新增**三个非纯虚**默认实现（保证其它平台老代码零改动即可编译）：① `setKeyboardFollowDivert(bool)`（默认空实现）② `bool getLocalCursorPos(int32_t&, int32_t&) const`（默认转发 `getCursorPos`）③ `setKeyboardFollowLocalCursor(bool)`（默认空实现；只有 macOS 的客户端需要它，因为它的 `enable()` 会藏光标） |
 | `src/lib/platform/MSWindowsHook.h` | 改 | `EHookMode` 新增 `kHOOK_KEYBOARD_FOLLOW`；新增 `static void setKeyboardDivert(bool)` |
 | `src/lib/platform/MSWindowsHook.cpp` | 改 | ① 新增 `g_keyboardDivert` 与 `isRelayingEvents()`（= relay 模式 或 KFM+已接管）；② 键盘分支的两处 `g_mode == kHOOK_RELAY_EVENTS` 判断改用 `isRelayingEvents()`；③ `mouseHookHandler` 开头加 KFM 分支：只上报 `DESKFLOW_MSG_MOUSE_MOVE`，**一律 `return false`**（永不吞鼠标） |
-| `src/lib/platform/MSWindowsScreen.h` / `.cpp` | 改 | ① 新增成员 `m_keyboardFollow`（构造时读设置）与 `m_keyboardFollowDiverted`；② 实现 `setKeyboardFollowDivert`：**接管前**把本地正按住的键用 `fakeLocalKey(..., false)` 释放（否则本地会卡住修饰键），**归还时**用 `MSWindowsHook::getPhysicalKeyState()` 找出仍被物理按住的键并重新按下（否则用户正按着的 Shift 在本地会丢失）；③ 实现 `getLocalCursorPos`（直接 `GetCursorPos`）；④ `enable()`/`enter()` 选钩子模式：KFM 用 `kHOOK_KEYBOARD_FOLLOW`，否则 `kHOOK_WATCH_JUMP_ZONE`；⑤ `leave()` 在 KFM 下直接 return（防呆：绝不 warp 光标、绝不把钩子切回 relay） |
+| `src/lib/platform/MSWindowsScreen.h` / `.cpp` | 改 | ① 新增成员 `m_keyboardFollow`（构造时读设置）与 `m_keyboardFollowDiverted`；② 实现 `setKeyboardFollowDivert`：整体包在 `fakeInputBegin()/fakeInputEnd()` 里（否则补偿键会被钩子上报给服务端、再转发到远端，制造假的 key up/down）。**接管前**把本地正按住的键用 `fakeLocalKey(..., false)` 释放（否则本地会卡住修饰键），**归还时**用 `MSWindowsHook::getPhysicalKeyState()` 找出仍被物理按住的键并重新按下（否则用户正按着的 Shift 在本地会丢失）；③ 实现 `getLocalCursorPos`（直接 `GetCursorPos`）；④ `enable()`/`enter()` 选钩子模式：KFM 用 `kHOOK_KEYBOARD_FOLLOW`，否则 `kHOOK_WATCH_JUMP_ZONE`；⑤ `leave()` 在 KFM 下直接 return（防呆：绝不 warp 光标、绝不把钩子切回 relay）。Windows 客户端本来就从不隐藏光标，所以 `setKeyboardFollowLocalCursor` 用默认空实现即可 |
 
 ### 4.5 配置
 
@@ -240,21 +240,246 @@ GUI 开关是后续待办（见 §8）。
 
 ---
 
-## 6. macOS 端要补什么（下一步）
+## 6. macOS 端实施指引（可直接交给执行者）
 
-设计上刻意把平台相关收敛到 **两个虚函数**，macOS 只需：
+> 本节是**交接文档**，不是提纲。共享层（协议 / Server / Client / 接口）已经全部落地并通过 MSVC 语法检查，macOS 侧的执行者**只需要动两个文件**：`src/lib/platform/OSXScreen.h` 和 `src/lib/platform/OSXScreen.mm`。不要改协议、不要改 `Server`/`Client`。
 
-1. `OSXScreen::setKeyboardFollowDivert(bool)`
-   - macOS 的输入拦截在 `OSXScreen` 的 `CGEventTap`（`m_eventTap`）里，钩子是否吞键由事件 tap 的回调决定。
-   - 需要一个"只吞键盘、不吞鼠标"的状态位，等价于 Windows 的 `g_keyboardDivert`；鼠标事件必须原样 `return event`（放行）。
-   - **注意**：macOS 的 tap 可能因为超时被系统摘掉（`kCGEventTapDisabledByTimeout`），要在回调里处理重新启用，并保证 KFM 下不会把 tap 丢掉后仍在吞键。
-2. `OSXScreen::getLocalCursorPos(int32_t&, int32_t&) const`
-   - 直接取本机光标（`CGEventCreate` + `CGEventGetLocation`，或 `NSEvent.mouseLocation` 转成屏幕坐标）。
-   - 注意 macOS 的坐标系原点在左下，而 Deskflow 的 `x,y` 是左上原点，要翻转 y。
-3. `OSXScreen::leave()` / `enable()` / `enter()` 加与 Windows 同样的 KFM 防呆（不要 `hideCursor`、不要 warp）。
-4. 客户端侧**无需任何改动**：`Client` 的轮询逻辑是平台无关的，`getLocalCursorPos` 默认实现已经转发 `getCursorPos`，只要 OSXScreen 覆写它即可。
+### 6.0 交接卡片
 
-Linux（X11/libei）同理：`XWindowsScreen` / `EiScreen` 各加两个实现。若某平台实现不了 divert，KFM 会退化成"键盘不跟随"而不是把键盘锁死（`setKeyboardFollowDivert` 默认空实现）。
+| 项 | 内容 |
+|---|---|
+| 目标 | 在 macOS 上实现 3 个虚函数 + 1 处 tap 回调改造 + 1 处 `leave()` 防呆 |
+| 允许改的文件 | `src/lib/platform/OSXScreen.h`、`src/lib/platform/OSXScreen.mm`（如果 `mapKeyButtonToVirtualKey` 不可见，才允许动 `OSXKeyState.h` 加一个 public 方法） |
+| 不允许改 | `ProtocolTypes.*`、`Server.*`、`Client.*`、`ServerProxy*`、`ClientProxy*`、`IPlatformScreen.h`、`Settings.h`（共享层已完成） |
+| 完成定义 | ① 编译通过（Xcode/CMake，无新增警告）② 单机跑起来，日志出现 `keyboard follow mode` ③ 双机（Mac 服务端 + 任一客户端）按 §9.2 的用例 5/6 验证：光标不跳不隐藏；按住修饰键切换不粘键 |
+| 必须先读 | 本节全部 + §2（架构）+ §4（共享层改了什么） |
+
+### 6.1 macOS 输入层现状（已核实，含行号）
+
+| 事实 | 位置 | 对 KFM 的意义 |
+|---|---|---|
+| tap 创建在 `OSXScreen::enable()`，primary 与 secondary **各装一个** | `OSXScreen.mm:692-749`（primary 705-708、secondary 720-723） | 两侧都有拦截能力 |
+| tap location = **`kCGHIDEventTap`**，option = **`kCGEventTapOptionDefault`** | `OSXScreen.mm:705-708`、`720-723` | ✅ **能吞键，无需改 tap option、无需新权限** |
+| 吞/放 = 回调返回值：`return event` 放行 / `return nullptr` 吞掉 | `OSXScreen.mm:1742-1746` | KFM 只需要改这里的判断 |
+| 判断依据**只有** `m_isOnScreen` | `OSXScreen.mm:1742` | KFM 服务端该值恒为 true，**必须新增独立 divert 位** |
+| 键盘分支：`kCGEventKeyDown/KeyUp/FlagsChanged` → `screen->onKey(event)` | `OSXScreen.mm:1710-1714` | 这条既有通路已把按键上报给服务端（等价 Windows 的 `DESKFLOW_MSG_KEY`），KFM 直接复用 |
+| 媒体键走 `NX_SYSDEFINED` → `onMediaKey` | `OSXScreen.mm:1725-1740` | 需要**明确决定**媒体键是否一起吞（建议一起吞，否则音量键会在本机生效而其他键被转发） |
+| secondary 的回调 `handleCGInputEventSecondary` 第一行就 `return event` | `OSXScreen.mm:1657-1678` | 客户端这个 tap 是死的，**不需要动** |
+| tap 被系统摘掉：`kCGEventTapDisabledByTimeout` 会重新 `CGEventTapEnable`；`kCGEventTapDisabledByUserInput` **只打日志不恢复** | `OSXScreen.mm:1715-1724` | ⚠️ tap 死了 = 吞键静默失效（键盘偷偷回到本地，而服务端以为在转发）。实现时必须把 divert 与 tap 健康度关联 |
+| `leave()` 会 `hideCursor()`；primary 还会 `CGAssociateMouseAndMouseCursorPosition(false)` 冻结光标 | `OSXScreen.mm:823-838` | 必须像 Windows 一样在 KFM 下直接 return |
+| secondary 的 `enable()` 会 **`hideCursor()` + 把光标挪到主屏中心** | `OSXScreen.mm:709-715` | ⚠️ **这是必须额外处理的坑**：KFM 下客户端永远收不到 `enter()`，光标会一直不可见 |
+| `getCursorPos()` 用 `CGEventCreate(nullptr)` + `CGEventGetLocation`，读的是**系统真实光标** | `OSXScreen.mm:245-255` | 坐标是 Quartz 全局坐标（主屏左上原点、y 向下），**与 Deskflow 一致，不需要翻转 y**（`NSEvent.mouseLocation` 才需要，本仓库没用） |
+| 键盘注入：`OSXKeyState::fakeKey()` → `postHIDVirtualKey()`（IOHIDPostEvent）/ `postKeyboardKey()`（`CGEventCreateKeyboardEvent` + `CGEventPost(kCGHIDEventTap,...)`） | `OSXKeyState.cpp:643-718` | ⚠️ 见 6.5：`CGEventPost` 到 HID tap 会**再次进入我们自己 head-insert 的 tap** |
+| 物理按键读取：`OSXKeyState::pollPressedKeys(KeyButtonSet&)`（`GetKeys`）/ `pollActiveModifiers()`（`GetCurrentKeyModifiers`） | `OSXKeyState.cpp:494-506`、`442-471` | 等价于 Windows 的 `getPhysicalKeyState`，用于"归还键盘时恢复仍按住的键" |
+| macOS **没有** `fakeLocalKey`，也**没有** `m_primaryKeyDownList` | — | 补偿键要自己实现（6.5） |
+| 权限：primary 构造时要求 `AXIsProcessTrusted()`，`checkAXPermissions()` 每秒复查 | `OSXScreen.mm:131-137`、`1522-1532` | KFM 的吞键**不需要额外权限**（tap 本来就可拦截） |
+| 安全输入（密码框）：`IsSecureEventInputEnabled()` 为真时系统扣住键盘 | `OSXScreen.mm:1827-1892` | KFM 转发会静默失效，属已知限制（与原模式一致） |
+| tap 跑在独立线程 + 独立 `CFRunLoop` | `OSXScreen.h:301-304` | ⚠️ divert 标志**跨线程**：服务端线程写、tap 线程读 → 必须 `std::atomic<bool>` |
+
+### 6.2 要实现的三个虚函数
+
+```cpp
+// OSXScreen.h
+void setKeyboardFollowDivert(bool divert) override;
+bool getLocalCursorPos(int32_t &x, int32_t &y) const override;
+void setKeyboardFollowLocalCursor(bool keepVisible) override;
+
+// 新增成员
+bool m_keyboardFollow = false;                        // 构造时读 Settings::Server::KeyboardFollow（与 Windows 对齐）
+std::atomic<bool> m_keyboardFollowDiverted{false};     // 服务端线程写、tap 线程读
+bool m_keyboardFollowLocalCursor = false;              // 仅 secondary 用
+```
+
+**① `setKeyboardFollowDivert`（只扣键盘，绝不碰鼠标）**
+
+```cpp
+void OSXScreen::setKeyboardFollowDivert(bool divert)
+{
+  if (divert == m_keyboardFollowDiverted.load()) {
+    return;
+  }
+
+  // 补偿键只给本机应用看，且必须在非 tap 线程注入（本函数由服务端事件线程调用）
+  if (divert) {
+    // 此刻物理按住的键已经被本机应用收到了，但它们的 key-up 之后会被转发到别的
+    // 电脑，所以先在本机释放，否则会卡住修饰键
+    KeyButtonSet held;
+    m_keyState->pollPressedKeys(held);
+    for (KeyButton b : held) {
+      postLocalOnlyKey(b, false);
+    }
+  } else {
+    // 反过来：仍被物理按住的键是刚才被吞掉并转发出去的，本机应用从没见过 key-down，
+    // 需要补一次，否则用户正按着的 Shift 在本机"丢失"
+    KeyButtonSet held;
+    m_keyState->pollPressedKeys(held);
+    for (KeyButton b : held) {
+      postLocalOnlyKey(b, true);
+    }
+  }
+
+  m_keyboardFollowDiverted.store(divert);
+  LOG_VERBOSE("keyboard follow: %s the local keyboard", divert ? "relaying" : "keeping");
+}
+```
+
+**② `getLocalCursorPos`（可直接照抄 `getCursorPos`，去掉副作用）**
+
+```cpp
+bool OSXScreen::getLocalCursorPos(int32_t &x, int32_t &y) const
+{
+  CGEventRef event = CGEventCreate(nullptr);
+  if (event == nullptr) {
+    return false;
+  }
+  const CGPoint mouse = CGEventGetLocation(event);   // 全局坐标，左上原点，不要翻 y
+  CFRelease(event);
+  x = static_cast<int32_t>(mouse.x);
+  y = static_cast<int32_t>(mouse.y);
+  return true;
+}
+```
+> 多显示器天然可用（全局坐标可为负）。覆写的唯一收益是不污染 `m_xCursor/m_yCursor/m_cursorPosValid`。
+
+**③ `setKeyboardFollowLocalCursor`（只在 secondary 上有意义）**
+
+```cpp
+void OSXScreen::setKeyboardFollowLocalCursor(bool keepVisible)
+{
+  m_keyboardFollowLocalCursor = keepVisible;
+  if (keepVisible && !m_isPrimary && m_cursorHidden) {
+    showCursor();     // enable() 可能已经把光标藏了；这条消息可能早于/晚于 enable() 到达
+  }
+}
+```
+并把 `enable()` 的 secondary 分支改成有条件：
+```cpp
+  } else {
+    // KFM: 光标属于本机鼠标，既不隐藏也不搬位置
+    if (!m_keyboardFollowLocalCursor) {
+      hideCursor();
+      fakeMouseMove(m_xCenter, m_yCenter);
+    }
+    m_eventTapPort = CGEventTapCreate( ... handleCGInputEventSecondary ... );
+  }
+```
+
+### 6.3 tap 回调改造（`OSXScreen.mm:1742-1746`）
+
+把原来的
+```cpp
+  if (screen->m_isOnScreen) {
+    return event;
+  } else {
+    return nullptr;
+  }
+```
+换成：
+```cpp
+  // Keyboard follow mode: swallow ONLY the keyboard, never the mouse.  The keys
+  // were already relayed by onKey() -> KeyState::sendKeyEvent.
+  if (screen->m_keyboardFollowDiverted.load()) {
+    switch (type) {
+    case kCGEventKeyDown:
+    case kCGEventKeyUp:
+    case kCGEventFlagsChanged:
+      return nullptr;
+    case NX_SYSDEFINED:
+      if (isMediaKeyEvent(event)) {
+        return nullptr;      // 媒体键跟随键盘一起走（如果决定不在本机生效）
+      }
+      break;
+    default:
+      break;
+    }
+    return event;            // 鼠标按键/移动/滚轮一律放行
+  }
+
+  return screen->m_isOnScreen ? event : nullptr;
+```
+**同时在回调最前面加自我注入的放行（见 6.5）**：
+```cpp
+  if (CGEventGetIntegerValueField(event, kCGEventSourceUserData) == kLocalOnlyKeyMarker) {
+    return event;            // 我们自己注入的补偿键，永远放行
+  }
+```
+
+### 6.4 `leave()` 防呆（`OSXScreen.mm:823`）
+
+```cpp
+void OSXScreen::leave()
+{
+  if (m_keyboardFollow) {
+    // KFM 下光标永远留在本机：绝不 hideCursor、绝不冻结鼠标关联、绝不置 m_isOnScreen=false
+    LOG_VERBOSE("ignoring leave request: keyboard follow mode keeps the cursor here");
+    return;
+  }
+  ... 既有逻辑 ...
+}
+```
+同理 `disable()` 里复位 `m_keyboardFollowDiverted`。
+
+### 6.5 补偿键的自我捕获问题（**最容易踩的坑**）
+
+`CGEventPost(kCGHIDEventTap, ...)` 的事件会**再次进入我们自己 `kCGHeadInsertEventTap` 的 tap**（且在链头，优先级最高）。如果不加识别：
+
+1. divert 打开时注入的补偿 key-up 会被自己的 tap 吞掉或再次上报 → 本机应用收不到、远端收到假事件；
+2. 补偿 key-down 同理。
+
+处理办法（照 Windows 的 marker 思路）：
+```cpp
+static constexpr int64_t kLocalOnlyKeyMarker = 0x4B464D31;   // 'KFM1'
+
+void OSXScreen::postLocalOnlyKey(KeyButton button, bool down)
+{
+  CGKeyCode code = m_keyState->mapKeyButtonToVirtualKey(button);   // 若不可见，在 OSXKeyState 里放开
+  CGEventRef event = CGEventCreateKeyboardEvent(nullptr, code, down);
+  if (event == nullptr) {
+    return;
+  }
+  CGEventSetIntegerValueField(event, kCGEventSourceUserData, kLocalOnlyKeyMarker);
+  CGEventPost(kCGHIDEventTap, event);
+  CFRelease(event);
+}
+```
+> 注意：**不要**在 tap 回调里调用 `CGEventPost`（Apple 明确说明 tap 回调里 post 的事件会被丢弃）。本函数只由服务端事件线程经 `setKeyboardFollowDivert()` 调用，满足要求。
+
+### 6.6 线程安全
+
+| 数据 | 写者 | 读者 | 要求 |
+|---|---|---|---|
+| `m_keyboardFollowDiverted` | 服务端事件线程（`setKeyboardFollowDivert`） | tap 线程（回调） | `std::atomic<bool>` |
+| `m_keyboardFollowLocalCursor` | 服务端事件线程（`Client` 收到 `DKBF` / `handshakeComplete`） | `enable()`、`showCursor()` 路径 | 只在事件线程读写即可（`enable()` 也在事件线程），无需原子 |
+| `m_keyboardFollow` | 构造函数 | `leave()` | 只读 |
+
+### 6.7 必须先在真机验证 / 可能推翻方案的点
+
+1. **`fakeLocalKey` 不存在**：6.5 的 marker 方案是设计推演，必须在真机上验证"补偿键确实只到本机应用、且不会被自己吞"。若 marker 不可靠，退路是"临时 `CGEventTapEnable(port, false)` → 注入 → 恢复"。
+2. **`mapKeyButtonToVirtualKey` 的可见性**：若不是 public，在 `OSXKeyState.h` 加一个 public 包装（这是唯一允许动 `OSXKeyState` 的情形）。
+3. **客户端光标**：`enable()` 的 hide+warp 改动是否影响到**原模式**（KFM 关闭时行为必须完全不变）。务必在 `server/keyboardFollow=false` 下回归一次。
+4. **媒体键语义**：吞还是不吞，需与用户确认（建议吞）。
+5. **tap 健康度**：`kCGEventTapDisabledByUserInput` 时是否要把 divert 关掉（建议：一旦发现 tap 不再有效，就 `setKeyboardFollowDivert(false)` + 日志告警，宁可键盘回到本机也不要静默丢键）。
+6. **全屏 Space 切换 / 用户切换**（`userSwitchCallback`，`OSXScreen.mm:1379-1393`）会摘掉 tap，KFM 需容忍并自愈。
+7. **`m_isOnScreen` 在 KFM 服务端恒为 true**：确认依赖它的既有代码（如 `onKey` 里的热键分支）不会因此行为异常。
+
+### 6.8 验收标准（双机）
+
+| # | 用例 | 期望 |
+|---|---|---|
+| M1 | 只开 Mac 服务端（KFM=on），不动鼠标打字 | 字在本机；日志无 divert 切换 |
+| M2 | 动客户端鼠标 → 在 Mac 上打字 | 字出现在客户端；Mac 本地无字符；客户端日志 `the keyboard is here` |
+| M3 | 动 Mac 鼠标 → 再打字 | 字回 Mac；客户端日志 `the keyboard went away` |
+| M4 | 把 Mac 鼠标推到屏幕最右边缘 | 光标正常停在边缘，**不跳屏、不消失** |
+| M5 | 按住 Shift → 动客户端鼠标 → 松开 | Mac 本地不粘 Shift；客户端不粘 Shift |
+| M6 | **Mac 做客户端**（另一台开 KFM） | Mac 的**光标始终可见**、不被挪到屏幕中心；动它的鼠标后键盘跟过来 |
+| M7 | KFM 关闭（回归） | 越界切换、光标隐藏、热键全部恢复原行为 |
+
+> M6 是 macOS 独有的一条，也是 §6.1 里那个"客户端光标"坑的验收项。
+
+### 6.9 Linux（可选，仅供参考）
+
+`XWindowsScreen` / `EiScreen` 同样实现这三个虚函数：X11 下用 `XGrabKeyboard`/`XTestFakeKeyEvent` 的组合，libei 下用 `ei_device_start_emulating`/`ei_device_stop_emulating`。若某平台实现不了 divert，KFM 会退化成"键盘不跟随"而不是把键盘锁死（默认实现是空操作）。
+
 
 ---
 
@@ -265,9 +490,14 @@ Linux（X11/libei）同理：`XWindowsScreen` / `EiScreen` 各加两个实现。
 | 对端是旧版本（协议 ≤1.8） | KFM 不可用：客户端不会发 `CKBF`，键盘永远留在服务端 | 服务端日志会有 `ignoring keyboard follow request` / 客户端 `not sent: server protocol < 1.9` |
 | 客户端进程崩溃/断线 | `removeClient` 收回键盘（`m_keyboardTarget=nullptr` + 解除 divert） | 不会把键盘锁在远端 |
 | 网络抖动导致 `CBYE` 丢包 | 靠 TCP 传输，不会丢；连接断开即回收 | |
-| 客户端按住 Ctrl 时键盘被抢走 | 服务端发 `DKBF(0)`，客户端 `fakeAllKeysUp()` | 防"Ctrl 卡死" |
+| 客户端按住 Ctrl 时键盘被抢走 | 服务端发 `DKBF(0,1)`，客户端 `fakeAllKeysUp()` | 防"Ctrl 卡死" |
 | 服务端按住 Shift 时键盘被抢走 | divert 打开前用 `fakeLocalKey(..., false)` 释放本地已按下的键 | 否则本地 OS 永远收不到 key up |
 | 键盘归还时用户仍按着某个修饰键 | 用 `getPhysicalKeyState()` 找出来并 `fakeLocalKey(..., true)` 重新按下 | 否则这个键在本地会"丢失"直到松开再按 |
+| 补偿键被当成用户输入转发出去 | Windows 下把补偿包在 `fakeInputBegin()/fakeInputEnd()` 里；macOS 下用 `kCGEventSourceUserData` 标记并在回调放行 | 否则远端会收到假的 key up/down |
+| **macOS 客户端的光标** | KFM 开启时服务端下发 `DKBF(0,1)` → 客户端 `setKeyboardFollowLocalCursor(true)` → 保持光标可见、不搬到屏幕中心 | macOS 的 secondary `enable()` 默认会藏光标 + warp 到中心，不做这一步客户端光标**一直看不见**（验收用例 M6） |
+| macOS tap 被系统摘掉 | `kCGEventTapDisabledByTimeout` 已会重新启用；`DisabledByUserInput` 只打日志 | divert 期间 tap 失效 = 键盘静默回到本机而服务端以为在转发，实现时应把 divert 与 tap 健康度关联 |
+| macOS 媒体键（`NX_SYSDEFINED`） | 建议与键盘一起吞 | 否则音量键在本机生效、其他键被转发，行为割裂 |
+| Windows 客户端的光标 | 无需处理 | Windows 的 secondary 从不隐藏光标（与 macOS 不同） |
 | UAC / 安全桌面 / Ctrl+Alt+Del | **注入不了**，与原模式一致的限制 | 需要服务模式（`Use Service`）才能进安全桌面 |
 | 全屏游戏 / 反作弊 | 注入可能被丢弃 | 同原模式 |
 | 屏保激活 | `switchScreen()` 被 KFM 短路 → 光标不再跳到 (0,0)；`screensaver()` 消息仍正常广播 | 见 §4.2 ⑤ |
@@ -281,7 +511,7 @@ Linux（X11/libei）同理：`XWindowsScreen` / `EiScreen` 各加两个实现。
 
 ## 8. 后续待办
 
-- [ ] **macOS 端**：§6 的两个虚函数 + 防呆
+- [ ] **macOS 端**：按 §6 交接卡片执行（3 个虚函数 + tap 回调改造 + `leave()` 防呆 + `enable()` 光标条件化）。共享层（协议 / Server / Client / 接口）已完成，执行者**只改 `OSXScreen.h/.mm`**
 - [ ] **Linux 端**：同上（可选）
 - [ ] **GUI 开关**：`src/lib/gui/dialogs/ServerConfigDialog.{h,cpp,ui}` 加复选框（参照 `Win32KeepForeground`），并在 `ServerConfigDialog::init_from_config/onFormChange` 里读写
 - [ ] **单元测试**：
@@ -343,6 +573,7 @@ core 日志按级别过滤（`--log-level` 或 GUI 日志窗口）：
 生效：Server::keyboardSink()       ← onKeyDown/Up/Repeat 只认它
 吞键：MSWindowsHook kHOOK_KEYBOARD_FOLLOW + g_keyboardDivert
 光标：全程不动 —— switchScreen/jumpToScreen/leave() 在 KFM 下被短路
-协议：1.9 / CKBF(Client→Server) / DKBF(Server→Client)
+协议：1.9 / CKBF%4i（C→S 抢键盘）/ DKBF%1i%1i（S→C 是否持有 + KFM 是否开启）
 开关：server/keyboardFollow（默认 false，需重启）
+平台：只需实现 setKeyboardFollowDivert / getLocalCursorPos / setKeyboardFollowLocalCursor 三个虚函数
 ```

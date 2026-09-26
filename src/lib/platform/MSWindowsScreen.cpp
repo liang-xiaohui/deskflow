@@ -335,35 +335,45 @@ void MSWindowsScreen::leave()
 
 void MSWindowsScreen::setKeyboardFollowDivert(bool divert)
 {
-  if (divert && !m_keyboardFollowDiverted) {
-    // Any key that is physically held right now was delivered to the local
-    // applications, but its release will be relayed to the other computer
-    // instead, so release it locally first or it would stay down forever.
-    for (KeyButton i = 0; i < IKeyState::s_numButtons; ++i) {
-      if (m_keyState->isKeyDown(i)) {
-        fakeLocalKey(i, false);
-        LOG_VERBOSE("keyboard follow: released key button %d locally", i);
-      }
-    }
-  } else if (!divert && m_keyboardFollowDiverted) {
-    // The other way round: keys that are still held were swallowed and relayed,
-    // so the local applications never saw the press.  Restore it, otherwise the
-    // modifier the user is currently holding is missing locally.
-    BYTE keys[256];
-    if (MSWindowsHook::getPhysicalKeyState(keys)) {
-      for (int vk = 0; vk < 256; ++vk) {
-        if ((keys[vk] & 0x80) == 0) {
-          continue;
-        }
-        if (KeyButton button = m_keyState->virtualKeyToButton(static_cast<KeyID>(vk)); button != 0) {
-          fakeLocalKey(button, true);
-          LOG_VERBOSE("keyboard follow: restored key button %d locally", button);
+  if (divert != m_keyboardFollowDiverted) {
+    // The compensation keys below are meant for the local applications only.
+    // fakeInputBegin() makes the hook pass them through without reporting them
+    // to the server, so they are never relayed to whichever computer holds the
+    // keyboard at this moment.
+    fakeInputBegin();
+
+    if (divert) {
+      // Any key that is physically held right now was delivered to the local
+      // applications, but its release will be relayed to the other computer
+      // instead, so release it locally first or it would stay down forever.
+      for (KeyButton i = 0; i < IKeyState::s_numButtons; ++i) {
+        if (m_keyState->isKeyDown(i)) {
+          fakeLocalKey(i, false);
+          LOG_VERBOSE("keyboard follow: released key button %d locally", i);
         }
       }
+    } else {
+      // The other way round: keys that are still held were swallowed and relayed,
+      // so the local applications never saw the press.  Restore it, otherwise the
+      // modifier the user is currently holding is missing locally.
+      BYTE keys[256];
+      if (MSWindowsHook::getPhysicalKeyState(keys)) {
+        for (int vk = 0; vk < 256; ++vk) {
+          if ((keys[vk] & 0x80) == 0) {
+            continue;
+          }
+          if (KeyButton button = m_keyState->virtualKeyToButton(static_cast<KeyID>(vk)); button != 0) {
+            fakeLocalKey(button, true);
+            LOG_VERBOSE("keyboard follow: restored key button %d locally", button);
+          }
+        }
+      }
     }
+
+    fakeInputEnd();
+    m_keyboardFollowDiverted = divert;
   }
 
-  m_keyboardFollowDiverted = divert;
   m_hook.setKeyboardDivert(divert);
   LOG_VERBOSE("keyboard follow: %s the local keyboard", divert ? "relaying" : "keeping");
 }

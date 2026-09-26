@@ -23,18 +23,35 @@ void ServerProxy1_9::onLocalMouseActivity(uint32_t sequence)
   ProtocolUtil::writef(getStream(), kMsgCKeyboardFollow, sequence);
 }
 
+ServerProxy::ConnectionResult ServerProxy1_9::parseHandshakeMessage(const uint8_t *code)
+{
+  if (memcmp(code, kMsgDKeyboardFollow, 4) == 0) {
+    // the server announces the keyboard follow mode as soon as it accepts us,
+    // which can happen before our handshake has completed
+    return keyboardFollowState() ? ConnectionResult::Okay : ConnectionResult::Disconnect;
+  }
+
+  return ServerProxy1_8::parseHandshakeMessage(code);
+}
+
 ServerProxy::ConnectionResult ServerProxy1_9::parseMessage(const uint8_t *code)
 {
   if (memcmp(code, kMsgDKeyboardFollow, 4) == 0) {
-    int8_t isTarget = 0;
-    if (!ProtocolUtil::readf(getStream(), kMsgDKeyboardFollow + 4, &isTarget)) {
-      return ConnectionResult::Disconnect;
-    }
-    LOG_VERBOSE("recv keyboard follow state %d", isTarget);
-
-    keyboardFollowChanged(isTarget != 0);
-    return ConnectionResult::Okay;
+    return keyboardFollowState() ? ConnectionResult::Okay : ConnectionResult::Disconnect;
   }
 
   return ServerProxy1_8::parseMessage(code);
+}
+
+bool ServerProxy1_9::keyboardFollowState()
+{
+  int8_t isTarget = 0;
+  int8_t followMode = 0;
+  if (!ProtocolUtil::readf(getStream(), kMsgDKeyboardFollow + 4, &isTarget, &followMode)) {
+    return false;
+  }
+  LOG_VERBOSE("recv keyboard follow state (target=%d mode=%d)", isTarget, followMode);
+
+  keyboardFollowChanged(isTarget != 0, followMode != 0);
+  return true;
 }

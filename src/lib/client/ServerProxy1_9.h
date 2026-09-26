@@ -22,5 +22,10 @@ public:
   void onLocalMouseActivity(uint32_t sequence) override;
 
 protected:
+  ConnectionResult parseHandshakeMessage(const uint8_t *code) override;
   ConnectionResult parseMessage(const uint8_t *code) override;
+
+private:
+  //! Read kMsgDKeyboardFollow and forward it to the client
+  bool keyboardFollowState();
 };

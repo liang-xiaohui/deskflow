@@ -188,6 +188,9 @@ void Client::handshakeComplete()
   if (m_relativeMouseMoves && !m_hasRelativeRestorePosition) {
     saveRelativeRestorePosition();
   }
+  // enable() may have hidden our cursor; the server may already have told us
+  // that this computer has to keep its own cursor in keyboard follow mode
+  m_screen->getPlatformScreen()->setKeyboardFollowLocalCursor(m_keyboardFollowMode);
   setupFollowTimer();
   sendEvent(EventTypes::ClientConnected);
 }
@@ -651,11 +654,19 @@ void Client::handleFollowTimer()
   m_server->onLocalMouseActivity(++m_followSequence);
 }
 
-void Client::keyboardFollowChanged(bool isTarget)
+void Client::keyboardFollowChanged(bool isTarget, bool followMode)
 {
-  LOG_VERBOSE("keyboard follow: %s", isTarget ? "the keyboard is here" : "the keyboard went away");
+  LOG_VERBOSE(
+      "keyboard follow: %s (mode=%s)", isTarget ? "the keyboard is here" : "the keyboard went away",
+      followMode ? "on" : "off"
+  );
   m_isKeyboardFollowTarget = isTarget;
+  m_keyboardFollowMode = followMode;
   m_followCooldown = 0;
+
+  // In keyboard follow mode the server never drives our cursor, so it belongs to
+  // our own mouse and must stay visible.
+  m_screen->getPlatformScreen()->setKeyboardFollowLocalCursor(followMode);
 
   if (!isTarget) {
     // Release anything we may still be holding down, otherwise a key that was

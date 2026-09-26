@@ -513,18 +513,25 @@ extern const char *const kMsgCKeepAlive;
 extern const char *const kMsgCKeyboardFollow;
 
 /**
- * @brief Keyboard follow state (informational)
+ * @brief Keyboard follow state
  *
  * **Message Code**: `"DKBF"`
  * **Direction**: Primary → Secondary
- * **Format**: `"DKBF%1i"`
+ * **Format**: `"DKBF%1i%1i"`
  * **Parameters**:
  * - `$1`: State (1 byte) - 1 if this secondary is the current keyboard target,
- * 0 if it lost the keyboard.
+ * 0 if it does not hold the keyboard.
+ * - `$2`: Follow mode (1 byte) - 1 if the primary has keyboard follow mode
+ * enabled (`server/keyboardFollow`), 0 otherwise. Sent once as soon as the
+ * connection is established as well, so the secondary knows about the mode even
+ * though it may never receive the keyboard.
  *
- * Lets the secondary know whether its keyboard-follow requests are currently
- * honoured and lets it release any keys it may still be holding down when the
- * keyboard is taken away. Only sent to secondaries that negotiated 1.9 or later.
+ * Tells the secondary whether it holds the keyboard (it can then stop asking and
+ * releases any keys it may still be holding when the keyboard is taken away) and
+ * whether the primary is in keyboard follow mode. In keyboard follow mode the
+ * keyboard moves between computers while every computer keeps its own cursor, so
+ * a secondary must keep its own cursor visible instead of hiding it for the
+ * server driven cursor. Only sent to secondaries that negotiated 1.9 or later.
  *
  * @see kMsgCKeyboardFollow
  * @since Protocol version 1.9

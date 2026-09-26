@@ -27,15 +27,18 @@ ClientProxy1_9::ClientProxy1_9(
   // do nothing
 }
 
-void ClientProxy1_9::keyboardFollow(bool isTarget)
+void ClientProxy1_9::keyboardFollow(bool isTarget, bool followMode)
 {
-  if (isTarget == m_isKeyboardFollowTarget) {
+  if (isTarget == m_isKeyboardFollowTarget && followMode == m_keyboardFollowMode) {
     return;
   }
   m_isKeyboardFollowTarget = isTarget;
+  m_keyboardFollowMode = followMode;
 
-  LOG_VERBOSE("send keyboard follow state %d to \"%s\"", isTarget ? 1 : 0, getName().c_str());
-  ProtocolUtil::writef(getStream(), kMsgDKeyboardFollow, isTarget ? 1 : 0);
+  LOG_VERBOSE(
+      "send keyboard follow state (target=%d mode=%d) to \"%s\"", isTarget ? 1 : 0, followMode ? 1 : 0, getName().c_str()
+  );
+  ProtocolUtil::writef(getStream(), kMsgDKeyboardFollow, isTarget ? 1 : 0, followMode ? 1 : 0);
 }
 
 bool ClientProxy1_9::parseMessage(const uint8_t *code)

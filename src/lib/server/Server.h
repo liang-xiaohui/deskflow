@@ -306,6 +306,7 @@ private:
   // keyboard follow mode helpers
   BaseClientProxy *keyboardSink() const;
   void setKeyboardTarget(BaseClientProxy *target);
+  void notifyKeyboardFollow(BaseClientProxy *client, bool isTarget);
 
   // event handlers
   void handleShapeChanged(BaseClientProxy *client);

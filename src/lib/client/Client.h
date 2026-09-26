@@ -135,9 +135,9 @@ public:
   //! Notify of keyboard follow state
   /*!
   Called when the server tells us whether this computer currently holds the
-  keyboard (keyboard follow mode, protocol 1.9 and later).
+  keyboard and whether keyboard follow mode is on (protocol 1.9 and later).
   */
-  void keyboardFollowChanged(bool isTarget);
+  void keyboardFollowChanged(bool isTarget, bool followMode);
 
   //@}
   //! @name accessors
@@ -259,6 +259,7 @@ private:
   // keyboard follow mode (protocol 1.9 and later)
   EventQueueTimer *m_followTimer = nullptr;
   bool m_keyboardFollowSupported = false;
+  bool m_keyboardFollowMode = false;
   bool m_isKeyboardFollowTarget = false;
   bool m_hasFollowPosition = false;
   int32_t m_followX = 0;
