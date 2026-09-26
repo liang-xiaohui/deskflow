@@ -1182,7 +1182,7 @@ Enabling this setting will disable the server config GUI.</source>
     </message>
     <message>
         <source>Keyboard follow mode is currently available on Windows only.</source>
-        <translation>鼠标跟随模式目前仅支持 Windows。</translation>
+        <translation type="vanished">鼠标跟随模式目前仅支持 Windows。</translation>
     </message>
     <message>
         <source>Add the computers that can receive the keyboard. Their positions in this grid do not affect keyboard follow mode.</source>
@@ -1191,6 +1191,10 @@ Enabling this setting will disable the server config GUI.</source>
     <message>
         <source>Input sharing mode</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Keyboard follow mode is currently available on Windows and macOS only.</source>
+        <translation>鼠标跟随模式目前仅支持 Windows 和 macOS。</translation>
     </message>
 </context>
 <context>

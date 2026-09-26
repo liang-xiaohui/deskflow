@@ -10,6 +10,7 @@
 
 #include "deskflow/PlatformScreen.h"
 #include "platform/OSXClipboard.h"
+#include "platform/OSXKeyboardFollow.h"
 #include "platform/OSXPowerManager.h"
 
 #include <Carbon/Carbon.h>
@@ -18,9 +19,11 @@
 #include <mach/mach_interface.h>
 #include <mach/mach_port.h>
 
+#include <atomic>
 #include <bitset>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -91,6 +94,10 @@ public:
   void resetOptions() override;
   void setOptions(const OptionsList &options) override;
   void setSequenceNumber(uint32_t) override;
+  bool supportsKeyboardFollow() const override;
+  void setKeyboardFollowDivert(bool divert) override;
+  bool getLocalCursorPos(int32_t &x, int32_t &y) const override;
+  void setKeyboardFollowLocalCursor(bool keepVisible) override;
   bool isPrimary() const override;
   std::string getSecureInputApp() const override;
 
@@ -122,6 +129,9 @@ private:
   void constructMouseButtonEventMap();
 
   bool onKey(CGEventRef event);
+
+  CGEventFlags trackKeyboardFollowKey(CGEventRef event);
+  void postKeyboardFollowLocalKey(CGKeyCode key, bool down, CGEventFlags flags) const;
 
   void onMediaKey(CGEventRef event);
 
@@ -222,6 +232,13 @@ private:
 
   // true if mouse has entered the screen
   bool m_isOnScreen;
+
+  bool m_keyboardFollow = false;
+  bool m_keyboardFollowLocalCursor = false;
+  std::atomic<bool> m_keyboardFollowDiverted{false};
+  // Compensation changes OS key state, so keep the held keys independently.
+  mutable std::mutex m_keyboardFollowMutex;
+  OSXKeyboardFollowState m_keyboardFollowKeys;
 
   // the display
   CGDirectDisplayID m_displayID;

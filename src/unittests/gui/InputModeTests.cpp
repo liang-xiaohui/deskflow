@@ -59,8 +59,8 @@ void InputModeTests::init()
 
 void InputModeTests::saveAndRestore()
 {
-#ifndef Q_OS_WIN
-  QSKIP("Mouse follow controls currently require the Windows input backend.");
+#if !defined(Q_OS_WIN) && !defined(Q_OS_MACOS)
+  QSKIP("Mouse follow controls require the Windows or macOS input backend.");
 #endif
   ServerConfig config;
   config.addClient("client");
@@ -193,8 +193,8 @@ void InputModeTests::bundledCoreRecoveryStopsServiceAndCanBeCancelled()
 
 void InputModeTests::mainWindowModeAndTray()
 {
-#ifndef Q_OS_WIN
-  QSKIP("Mouse follow controls currently require the Windows input backend.");
+#if !defined(Q_OS_WIN) && !defined(Q_OS_MACOS)
+  QSKIP("Mouse follow controls require the Windows or macOS input backend.");
 #endif
   MainWindow window;
   auto *mode = window.findChild<QComboBox *>("comboSharingMode");

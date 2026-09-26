@@ -22,6 +22,7 @@
 #include "deskflow/Clipboard.h"
 #include "deskflow/DisplayInvalidException.h"
 #include "deskflow/KeyMap.h"
+#include "deskflow/ScreenException.h"
 #include "mt/CondVar.h"
 #include "mt/Lock.h"
 #include "mt/Mutex.h"
@@ -40,6 +41,9 @@
 #include <libproc.h>
 #include <mach-o/dyld.h>
 #include <math.h>
+#include <unistd.h>
+
+#include <algorithm>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -115,6 +119,10 @@ OSXScreen::OSXScreen(IEventQueue *events, bool isPrimary, bool enableLangSync)
       m_events(events),
       m_impl(nullptr)
 {
+  m_keyboardFollow = m_isPrimary && Settings::value(Settings::Server::KeyboardFollow).toBool();
+  if (m_keyboardFollow) {
+    LOG_INFO("keyboard follow mode: the local mouse and cursor stay local");
+  }
   m_displayID = CGMainDisplayID();
   if (!updateScreenShape(m_displayID, 0)) {
     throw DisplayInvalidException("failed to initialize screen shape");
@@ -252,6 +260,79 @@ void OSXScreen::getCursorPos(int32_t &x, int32_t &y) const
   m_xCursor = x;
   m_yCursor = y;
   CFRelease(event);
+}
+
+bool OSXScreen::supportsKeyboardFollow() const
+{
+  return true;
+}
+
+bool OSXScreen::getLocalCursorPos(int32_t &x, int32_t &y) const
+{
+  // Sampling must not change the motion baseline used by the primary tap.
+  CGEventRef event = CGEventCreate(nullptr);
+  if (event == nullptr) {
+    return false;
+  }
+  const CGPoint pos = CGEventGetLocation(event);
+  CFRelease(event);
+  x = static_cast<int32_t>(pos.x);
+  y = static_cast<int32_t>(pos.y);
+  return true;
+}
+
+void OSXScreen::setKeyboardFollowLocalCursor(bool keepVisible)
+{
+  m_keyboardFollowLocalCursor = keepVisible;
+  if (!m_isPrimary && keepVisible && m_cursorHidden) {
+    showCursor();
+  }
+}
+
+CGEventFlags OSXScreen::trackKeyboardFollowKey(CGEventRef event)
+{
+  std::lock_guard lock(m_keyboardFollowMutex);
+  return m_keyboardFollowKeys.update(event);
+}
+
+void OSXScreen::postKeyboardFollowLocalKey(CGKeyCode key, bool down, CGEventFlags flags) const
+{
+  CGEventRef event = CGEventCreateKeyboardEvent(nullptr, key, down);
+  if (event == nullptr) {
+    LOG_ERR("keyboard follow: unable to compensate local key %u", key);
+    return;
+  }
+  for (const auto &modifier : OSXKeyboardFollowState::modifiers) {
+    if (key == modifier.key) {
+      CGEventSetType(event, kCGEventFlagsChanged);
+      break;
+    }
+  }
+  CGEventSetFlags(event, flags);
+  CGEventSetIntegerValueField(event, kCGEventSourceUserData, OSXKeyboardFollowState::localKeyMarker);
+  CGEventPost(kCGHIDEventTap, event);
+  CFRelease(event);
+}
+
+void OSXScreen::setKeyboardFollowDivert(bool divert)
+{
+  if (!m_isPrimary || !m_keyboardFollow) {
+    return;
+  }
+  std::lock_guard lock(m_keyboardFollowMutex);
+  if (divert == m_keyboardFollowDiverted.load()) {
+    return;
+  }
+
+  m_keyboardFollowDiverted.store(divert);
+  const auto flags = divert ? m_keyboardFollowKeys.lockFlags() : m_keyboardFollowKeys.modifierFlags();
+  for (size_t key = 0; key < m_keyboardFollowKeys.keys().size(); ++key) {
+    // Caps Lock is a toggle; replaying it would change the user's lock state.
+    if (key != kVK_CapsLock && m_keyboardFollowKeys.keys().test(key)) {
+      postKeyboardFollowLocalKey(static_cast<CGKeyCode>(key), !divert, flags);
+    }
+  }
+  LOG_VERBOSE("keyboard follow: %s the local keyboard", divert ? "relaying" : "keeping");
 }
 
 void OSXScreen::reconfigure(uint32_t activeSides)
@@ -691,6 +772,19 @@ void OSXScreen::hideCursor()
 
 void OSXScreen::enable()
 {
+  if (m_keyboardFollow) {
+    std::lock_guard lock(m_keyboardFollowMutex);
+    OSXKeyboardFollowState::Keys keys;
+    KeyButtonSet held;
+    m_keyState->pollPressedKeys(held);
+    for (const auto button : held) {
+      const auto key = OSXKeyState::mapKeyButtonToVirtualKey(button);
+      if (key < keys.size()) {
+        keys.set(key);
+      }
+    }
+    m_keyboardFollowKeys.seed(keys, CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState));
+  }
   // watch the clipboard
   m_clipboardTimer = m_events->newTimer(1.0, nullptr);
   m_events->addHandler(EventTypes::Timer, m_clipboardTimer, [this](const auto &) { checkClipboards(); });
@@ -709,10 +803,12 @@ void OSXScreen::enable()
   } else {
     // FIXME -- prevent system from entering power save mode
 
-    hideCursor();
+    if (!m_keyboardFollowLocalCursor) {
+      hideCursor();
 
-    // warp the mouse to the cursor center
-    fakeMouseMove(m_xCenter, m_yCenter);
+      // Only extended-screen mode owns and positions the secondary cursor.
+      fakeMouseMove(m_xCenter, m_yCenter);
+    }
 
     // there may be a better way to do this, but we register an event handler even if we're
     // not on the primary display (acting as a client). This way, if a local event comes in
@@ -724,6 +820,32 @@ void OSXScreen::enable()
   }
 
   if (m_eventTapPort) {
+    if (m_keyboardFollow) {
+      // Quartz may create a mouse-only tap by silently removing keyboard
+      // events for which this signed build has no Input Monitoring permission.
+      uint32_t count = 0;
+      if (CGGetEventTapList(0, nullptr, &count) != kCGErrorSuccess) {
+        throw ScreenOpenFailureException(QStringLiteral("keyboard follow: unable to verify the quartz event tap"));
+      }
+      std::vector<CGEventTapInformation> taps(count);
+      if (CGGetEventTapList(count, taps.data(), &count) != kCGErrorSuccess) {
+        throw ScreenOpenFailureException(QStringLiteral("keyboard follow: unable to inspect the quartz event tap"));
+      }
+      taps.resize(std::min(taps.size(), static_cast<size_t>(count)));
+      const bool capturesKeyboard = std::any_of(taps.begin(), taps.end(), [](const auto &tap) {
+        return tap.tappingProcess == getpid() && tap.tapPoint == kCGHIDEventTap &&
+               tap.options == kCGEventTapOptionDefault &&
+               OSXKeyboardFollowState::canCaptureKeyboard(tap.eventsOfInterest);
+      });
+      if (!capturesKeyboard) {
+        throw ScreenOpenFailureException(QStringLiteral(
+            "keyboard follow: macOS removed keyboard events from the input tap; "
+            "re-add this Deskflow.app in System Settings > Privacy & Security > Input Monitoring, "
+            "enable it and restart Deskflow"
+        ));
+      }
+      LOG_INFO("keyboard follow: verified quartz keyboard capture permission");
+    }
     m_eventTapRLSR = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, m_eventTapPort, 0);
     if (m_eventTapRLSR) {
       // Run the event tap on a dedicated thread with its own CFRunLoop so it fires
@@ -746,11 +868,17 @@ void OSXScreen::enable()
   } else {
     LOG_ERR("failed to create quartz event tap");
   }
+  if (m_keyboardFollow && (m_eventTapPort == nullptr || m_eventTapRLSR == nullptr)) {
+    throw ScreenOpenFailureException(QStringLiteral("keyboard follow requires a working quartz event tap"));
+  }
 }
 
 void OSXScreen::disable()
 {
-  showCursor();
+  setKeyboardFollowDivert(false);
+  if (m_cursorHidden) {
+    showCursor();
+  }
 
   // FIXME -- stop watching jump zones, stop capturing input
 
@@ -822,6 +950,10 @@ bool OSXScreen::canLeave()
 
 void OSXScreen::leave()
 {
+  if (m_keyboardFollow || m_keyboardFollowLocalCursor) {
+    LOG_VERBOSE("ignoring leave request: keyboard follow mode keeps the cursor here");
+    return;
+  }
   hideCursor();
 
   if (m_isPrimary) {
@@ -1682,6 +1814,12 @@ CGEventRef OSXScreen::handleCGInputEvent(CGEventTapProxy proxy, CGEventType type
 {
   OSXScreen *screen = (OSXScreen *)refcon;
 
+  if (OSXKeyboardFollowState::isLocalKey(event)) {
+    // Compensation is local only, including when delivered after diversion
+    // changes. Do not feed it into onKey() or the physical key snapshot.
+    return event;
+  }
+
   switch (type) {
   case kCGEventLeftMouseDown:
   case kCGEventRightMouseDown:
@@ -1710,17 +1848,32 @@ CGEventRef OSXScreen::handleCGInputEvent(CGEventTapProxy proxy, CGEventType type
   case kCGEventKeyDown:
   case kCGEventKeyUp:
   case kCGEventFlagsChanged:
-    screen->onKey(event);
-    break;
-  case kCGEventTapDisabledByTimeout:
-    // Re-enable our event-tap if we still have accessibility permissions
-    if (screen->checkAXPermissions()) {
-      CGEventTapEnable(screen->m_eventTapPort, true);
-      LOG_INFO("quartz event tap was disabled by timeout, re-enabling");
+    if (screen->m_keyboardFollow) {
+      const auto flags = screen->trackKeyboardFollowKey(event);
+      CGEventRef physicalEvent = CGEventCreateCopy(event);
+      if (physicalEvent != nullptr) {
+        CGEventSetFlags(physicalEvent, flags);
+        screen->onKey(physicalEvent);
+        CFRelease(physicalEvent);
+      }
+    } else {
+      screen->onKey(event);
     }
     break;
+  case kCGEventTapDisabledByTimeout:
   case kCGEventTapDisabledByUserInput:
-    LOG_ERR("quartz event tap was disabled by user input");
+    // Never call disable()/join() on the tap's own thread. Request normal
+    // shutdown if it cannot recover, so the server cannot silently duplicate
+    // keys locally while it still believes it is forwarding them.
+    if (AXIsProcessTrusted()) {
+      CGEventTapEnable(screen->m_eventTapPort, true);
+    }
+    if (AXIsProcessTrusted() && CGEventTapIsEnabled(screen->m_eventTapPort)) {
+      LOG_INFO("quartz event tap was disabled, re-enabled");
+    } else {
+      LOG_ERR("quartz event tap could not be recovered, stopping input sharing");
+      screen->m_events->addEvent(Event(EventTypes::Quit, nullptr, new ExitEventData(s_exitFailed)));
+    }
     break;
   case NX_NULLEVENT:
     break;
@@ -1737,6 +1890,12 @@ CGEventRef OSXScreen::handleCGInputEvent(CGEventTapProxy proxy, CGEventType type
     }
 
     LOG_VERBOSE("unknown quartz event type: 0x%02x", type);
+  }
+
+  if (screen->m_keyboardFollow) {
+    const bool keyboard = type == kCGEventKeyDown || type == kCGEventKeyUp || type == kCGEventFlagsChanged ||
+                          (type == NX_SYSDEFINED && isMediaKeyEvent(event));
+    return keyboard && screen->m_keyboardFollowDiverted.load() ? nullptr : event;
   }
 
   if (screen->m_isOnScreen) {

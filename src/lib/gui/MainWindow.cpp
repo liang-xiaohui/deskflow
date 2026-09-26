@@ -219,7 +219,9 @@ void MainWindow::setupControls()
   ui->rbModeClient->setChecked(coreMode == Settings::CoreMode::Client);
   ui->rbModeServer->setChecked(coreMode == Settings::CoreMode::Server);
   ui->comboSharingMode->setCurrentIndex(Settings::value(Settings::Server::KeyboardFollow).toBool() ? 1 : 0);
-  ui->comboSharingMode->setEnabled(Settings::isWritable() && deskflow::platform::isWindows());
+  ui->comboSharingMode->setEnabled(
+      Settings::isWritable() && (deskflow::platform::isWindows() || deskflow::platform::isMac())
+  );
 
   ui->lineEditName->setValidator(new QRegularExpressionValidator(m_nameRegEx, this));
   ui->lineEditName->setVisible(false);
@@ -991,7 +993,8 @@ void MainWindow::coreProcessStateChanged(ProcessState state)
   using enum ProcessState;
   updateStatus();
   ui->comboSharingMode->setEnabled(
-      Settings::isWritable() && deskflow::platform::isWindows() && (state == Started || state == Stopped)
+      Settings::isWritable() && (deskflow::platform::isWindows() || deskflow::platform::isMac()) &&
+      (state == Started || state == Stopped)
   );
   if (state == Started) {
     qDebug() << "recording that core has started";

@@ -1170,11 +1170,11 @@ Al habilitar esta opción, se deshabilitará la interfaz gráfica de usuario (GU
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Keyboard follow mode is currently available on Windows only.</source>
+        <source>Add the computers that can receive the keyboard. Their positions in this grid do not affect keyboard follow mode.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Add the computers that can receive the keyboard. Their positions in this grid do not affect keyboard follow mode.</source>
+        <source>Keyboard follow mode is currently available on Windows and macOS only.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

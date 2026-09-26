@@ -86,6 +86,9 @@ public:
 
   CGEventFlags getModifierStateAsOSXFlags() const;
 
+  // Inverse of mapVirtualKeyToKeyButton; also used for local compensation.
+  static uint32_t mapKeyButtonToVirtualKey(KeyButton keyButton);
+
 protected:
   // KeyState overrides
   void getKeyMap(deskflow::KeyMap &keyMap) override;
@@ -120,10 +123,6 @@ private:
   // Maps an OS X virtual key id to a KeyButton.  This simply remaps
   // the ids so we don't use KeyButton 0.
   static KeyButton mapVirtualKeyToKeyButton(uint32_t keyCode);
-
-  // Maps a KeyButton to an OS X key code.  This is the inverse of
-  // mapVirtualKeyToKeyButton.
-  static uint32_t mapKeyButtonToVirtualKey(KeyButton keyButton);
 
   void init();
 

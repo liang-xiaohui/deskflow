@@ -89,6 +89,7 @@ elseif(APPLE)
     OSXKeyLayoutResource.h
     OSXKeyState.cpp
     OSXKeyState.h
+    OSXKeyboardFollow.h
     OSXMediaKeySupport.h
     OSXMediaKeySupport.m
     OSXPasteboardPeeker.h

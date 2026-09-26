@@ -550,7 +550,7 @@ void ServerConfigDialog::updateControls() const
   ui->sbSwitchDoubleTap->setEnabled(writable && ui->cbSwitchDoubleTap->isChecked());
   ui->sbSwitchDelay->setEnabled(writable && ui->cbSwitchDelay->isChecked());
   ui->groupExternalConfig->setEnabled(writable);
-  ui->comboInputMode->setEnabled(writable && deskflow::platform::isWindows());
+  ui->comboInputMode->setEnabled(writable && (deskflow::platform::isWindows() || deskflow::platform::isMac()));
   ui->groupSwitch->setEnabled(writable && !m_keyboardFollow);
   ui->cbRelativeMouseMoves->setEnabled(writable && !m_keyboardFollow);
   ui->cbWin32KeepForeground->setEnabled(writable && !m_keyboardFollow);
@@ -565,8 +565,8 @@ void ServerConfigDialog::updateControls() const
           : tr("Use one keyboard and mouse. Move the pointer across a screen edge to control another computer. "
                "Arrange the computers below to match your displays.")
   );
-  if (!deskflow::platform::isWindows()) {
-    ui->lblInputModeDescription->setText(tr("Keyboard follow mode is currently available on Windows only."));
+  if (!deskflow::platform::isWindows() && !deskflow::platform::isMac()) {
+    ui->lblInputModeDescription->setText(tr("Keyboard follow mode is currently available on Windows and macOS only."));
   }
   ui->label_2->setText(
       m_keyboardFollow ? tr("Add the computers that can receive the keyboard. Their positions in this grid do not "
