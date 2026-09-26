@@ -17,6 +17,7 @@
 #include <QProcess>
 #include <QTimer>
 
+class InputModeTests;
 namespace deskflow::gui {
 
 namespace ipc {
@@ -26,6 +27,7 @@ class DaemonIpcClient;
 
 class CoreProcess : public QObject
 {
+  friend class ::InputModeTests;
   using ConnectionState = deskflow::core::ConnectionState;
   using ProcessMode = Settings::ProcessMode;
   using ProcessState = deskflow::core::ProcessState;
@@ -35,7 +37,8 @@ public:
   enum class Error
   {
     AddressMissing,
-    StartFailed
+    StartFailed,
+    ServiceVersionMismatch
   };
 
   explicit CoreProcess(const ServerConfig &serverConfig);
@@ -47,6 +50,7 @@ public:
   void applyLogLevel();
   void clearSettings();
   void retryDaemon();
+  bool useBundledCore();
 
   // getters
   Settings::CoreMode mode() const
@@ -69,6 +73,10 @@ public:
   {
     return m_connectionState;
   }
+  QString keyboardTarget() const
+  {
+    return m_keyboardTarget;
+  }
 
   // setters
   void setAddress(const QString &address)
@@ -84,6 +92,7 @@ Q_SIGNALS:
   void error(deskflow::gui::CoreProcess::Error error);
   void logLine(const QString &line);
   void connectionStateChanged(deskflow::core::ConnectionState state);
+  void keyboardTargetChanged(const QString &target);
   void processStateChanged(deskflow::core::ProcessState state);
   void secureSocket(bool enabled);
   void daemonIpcClientConnectionFailed();
@@ -127,6 +136,11 @@ private:
   Settings::CoreMode m_mode = Settings::CoreMode::None;
   QMutex m_processMutex;
   QString m_secureSocketVersion;
+  QString m_keyboardTarget;
+  bool m_daemonVersionMismatch = false;
+  uint64_t m_startGeneration = 0;
+  QMetaObject::Connection m_coreStartedConnection;
+  QMetaObject::Connection m_daemonStartConnection;
   std::optional<ProcessMode> m_lastProcessMode = std::nullopt;
   QTimer m_retryTimer;
   deskflow::gui::ipc::CoreIpcClient *m_coreIpcClient = nullptr;

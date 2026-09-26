@@ -40,6 +40,8 @@ This class implements the top-level client algorithms for deskflow.
 */
 class Client : public IClient
 {
+  friend class ClientTests;
+
 public:
   class DisconnectRequest : public EventData
   {

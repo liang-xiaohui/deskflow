@@ -179,7 +179,10 @@ HKL AppUtilWindows::getCurrentKeyboardLayout() const
 
 void AppUtilWindows::eventLoop()
 {
-  HANDLE hCloseEvent = CreateEvent(nullptr, TRUE, FALSE, kCloseEventName);
+  // Address the core process being stopped. A shared event can collide with
+  // an elevated service instance and deny a desktop instance access.
+  const auto closeEventName = std::wstring(kCloseEventName) + L"-" + std::to_wstring(GetCurrentProcessId());
+  HANDLE hCloseEvent = CreateEvent(nullptr, TRUE, FALSE, closeEventName.c_str());
   if (!hCloseEvent) {
     LOG_CRIT("failed to create event for windows event loop");
     throw std::runtime_error(windowsErrorToString(GetLastError()));

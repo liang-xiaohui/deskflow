@@ -339,13 +339,13 @@ Do you want to connect to the server?
     <message>
         <source>Use this computer&apos;s keyboard and mouse
 (make this computer the server)</source>
-        <translation>使用此计算机的键盘和鼠标
+        <translation type="vanished">使用此计算机的键盘和鼠标
 (将此计算机设为服务器)</translation>
     </message>
     <message>
         <source>Use another computer’s mouse and keyboard
 (make this computer the client)</source>
-        <translation>使用另一台计算机的鼠标和键盘
+        <translation type="vanished">使用另一台计算机的鼠标和键盘
 (将此计算机设为客户端)</translation>
     </message>
     <message>
@@ -584,6 +584,68 @@ Additionally, check you are able to %1 the server config file: %2</source>
     <message>
         <source>&lt;p&gt;Keyboard layout support requires matching layouts on all computers. The following layouts from the other computer are not installed on this computer:&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Please install them to enable support for these layouts.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Share this computer&apos;s input
+(make this computer the server)</source>
+        <translation>共享本机的输入
+（将本机设为服务器）</translation>
+    </message>
+    <message>
+        <source>Receive input from another computer
+(make this computer the client)</source>
+        <translation>接收其他电脑的输入
+（将本机设为客户端）</translation>
+    </message>
+    <message>
+        <source>Sharing mode:</source>
+        <translation>共享模式：</translation>
+    </message>
+    <message>
+        <source>Extended screen mode</source>
+        <translation>扩展屏模式</translation>
+    </message>
+    <message>
+        <source>Mouse follow mode</source>
+        <translation>鼠标跟随模式</translation>
+    </message>
+    <message>
+        <source>%1
+Keyboard → %2</source>
+        <translation>%1
+键盘 → %2</translation>
+    </message>
+    <message>
+        <source>Service version mismatch</source>
+        <translation>后台服务版本不匹配</translation>
+    </message>
+    <message>
+        <source>The installed Deskflow service belongs to a different build. Sharing was not started.
+
+Install the service from this Deskflow build, or turn off the background service in Settings to run the core bundled with this GUI. Keyboard follow mode requires a matching core.</source>
+        <translation type="vanished">已安装的 Deskflow 后台服务与当前版本不匹配，共享尚未启动。
+
+请安装与当前版本配套的后台服务，或在“设置”中关闭后台服务，使用当前 GUI 目录中的 Core。鼠标跟随模式需要配套的 Core。</translation>
+    </message>
+    <message>
+        <source>Choose how the shared keyboard and mouse control other computers.</source>
+        <translation>选择共享键盘和鼠标控制其他电脑的方式。</translation>
+    </message>
+    <message>
+        <source>The installed Deskflow service belongs to a different build. Sharing was not started.
+
+Use this version to stop the old service&apos;s core and run the core bundled with this GUI. This saves desktop mode in Settings. To run as a background service, install the matching service.</source>
+        <translation>已安装的 Deskflow 后台服务与当前版本不匹配，共享尚未启动。
+
+点击“使用此版本启动”将停止旧服务管理的 Core，改用当前 GUI 配套的 Core，并保存桌面运行设置。如需后台服务运行，请安装配套版本的服务。</translation>
+    </message>
+    <message>
+        <source>Use this version</source>
+        <translation>使用此版本启动</translation>
+    </message>
+    <message>
+        <source>Could not switch to the bundled core. Check that settings are writable and the core exists, then try again.</source>
+        <translation>无法切换到配套的 Core。请检查设置文件是否可写、Core 程序是否存在，然后重试。</translation>
     </message>
 </context>
 <context>
@@ -1098,6 +1160,38 @@ Enabling this setting will disable the server config GUI.</source>
         <source>Enable lock to computer at startup</source>
         <translation type="unfinished">启动时启用锁定到计算机</translation>
     </message>
+    <message>
+        <source>Input sharing</source>
+        <translation>输入共享</translation>
+    </message>
+    <message>
+        <source>Extended screen mode</source>
+        <translation>扩展屏模式</translation>
+    </message>
+    <message>
+        <source>Mouse follow mode</source>
+        <translation>鼠标跟随模式</translation>
+    </message>
+    <message>
+        <source>Each computer uses its own mouse. The shared keyboard goes to the computer whose mouse moved last. Screen positions, edge switching and hotkeys are not used. Clipboard sharing remains available. Both computers need a version that supports this mode. Save to apply and restart sharing.</source>
+        <translation>每台电脑使用自己的鼠标，共享键盘跟随最后移动鼠标的电脑。此模式不使用屏幕位置、边缘切换或快捷键规则，仍可共享剪贴板。两端均需支持此模式；保存后将重新启动共享。</translation>
+    </message>
+    <message>
+        <source>Use one keyboard and mouse. Move the pointer across a screen edge to control another computer. Arrange the computers below to match your displays.</source>
+        <translation>使用一套键盘和鼠标，指针移过屏幕边缘即可控制另一台电脑。请在下方按实际显示器位置排列电脑。</translation>
+    </message>
+    <message>
+        <source>Keyboard follow mode is currently available on Windows only.</source>
+        <translation>鼠标跟随模式目前仅支持 Windows。</translation>
+    </message>
+    <message>
+        <source>Add the computers that can receive the keyboard. Their positions in this grid do not affect keyboard follow mode.</source>
+        <translation>添加可接收键盘的电脑。此模式下，网格位置不影响键盘跟随。</translation>
+    </message>
+    <message>
+        <source>Input sharing mode</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>
@@ -1391,6 +1485,14 @@ Enabling this setting will disable the server config GUI.</source>
     <message>
         <source>Encryption Disabled</source>
         <translation>加密已禁用</translation>
+    </message>
+    <message>
+        <source>Keyboard → %1</source>
+        <translation>键盘 → %1</translation>
+    </message>
+    <message>
+        <source>Keyboard follows the last mouse moved. Each computer keeps its own mouse.</source>
+        <translation>键盘跟随最后移动鼠标的电脑，每台电脑使用自己的鼠标。</translation>
     </message>
 </context>
 <context>

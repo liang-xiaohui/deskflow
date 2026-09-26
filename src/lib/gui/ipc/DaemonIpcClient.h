@@ -18,6 +18,7 @@ class DaemonIpcClient : public IpcClient
 
 public:
   explicit DaemonIpcClient(QObject *parent = nullptr);
+  DaemonIpcClient(QObject *parent, const QString &socketName);
   void sendLogLevel(const QString &logLevel);
   void sendConfigFile(const QString &configFile);
   void sendStartProcess();

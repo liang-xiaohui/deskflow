@@ -28,6 +28,9 @@
 #define DESKFLOW_HOOK_FAKE_INPUT_VIRTUAL_KEY VK_CANCEL
 #define DESKFLOW_HOOK_FAKE_INPUT_SCANCODE 0
 
+// Compensation events must be identifiable even after SendInput returns.
+inline constexpr ULONG_PTR kKeyboardFollowCompensation = 0x44464b46;
+
 enum EHookResult
 {
   kHOOK_FAILED,
@@ -70,16 +73,6 @@ public:
   Only meaningful with \c kHOOK_KEYBOARD_FOLLOW; the mouse is never affected.
   */
   static void setKeyboardDivert(bool divert);
-
-  //! Ignore synthesized (injected) key events
-  /*!
-  Used while the server injects compensation keys for keyboard follow mode: the
-  events must reach the local applications but must not be reported to the server
-  as user input.  Unlike fakeInputBegin() this takes effect immediately (it does
-  not travel through the desk thread), which matters because the very next thing
-  we do is synthesize the key.
-  */
-  static void setIgnoreInjected(bool ignore);
 
   //! Copy the hook's physical key state; false until it has observed an event.
   static bool getPhysicalKeyState(BYTE keys[256]);

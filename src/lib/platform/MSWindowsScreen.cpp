@@ -208,6 +208,12 @@ void MSWindowsScreen::enable()
 
 void MSWindowsScreen::disable()
 {
+  if (!m_isEnabled) {
+    return;
+  }
+  if (m_keyboardFollowDiverted) {
+    setKeyboardFollowDivert(false);
+  }
   LOG_DEBUG("disabling %s screen", m_isPrimary ? "primary" : "secondary");
   m_isEnabled = false;
 
@@ -337,20 +343,15 @@ void MSWindowsScreen::setKeyboardFollowDivert(bool divert)
 {
   if (divert != m_keyboardFollowDiverted) {
     // The compensation keys below are meant for the local applications only.
-    // setIgnoreInjected() makes the hook drop the report for them (and lets them
-    // through to the local OS) for as long as we synthesize them, so they are
-    // never relayed to whichever computer holds the keyboard at this moment.
-    // It takes effect synchronously, unlike fakeInputBegin() which goes through
-    // the desk thread.
-    m_hook.setIgnoreInjected(true);
-
+    // Their extra-info marker lets the hook pass them to the OS without
+    // reporting them, even if delivery occurs after this method returns.
     if (divert) {
       // Any key that is physically held right now was delivered to the local
       // applications, but its release will be relayed to the other computer
       // instead, so release it locally first or it would stay down forever.
       for (KeyButton i = 0; i < IKeyState::s_numButtons; ++i) {
         if (m_keyState->isKeyDown(i)) {
-          fakeLocalKey(i, false);
+          fakeLocalKey(i, false, kKeyboardFollowCompensation);
           LOG_VERBOSE("keyboard follow: released key button %d locally", i);
         }
       }
@@ -361,18 +362,21 @@ void MSWindowsScreen::setKeyboardFollowDivert(bool divert)
       BYTE keys[256];
       if (MSWindowsHook::getPhysicalKeyState(keys)) {
         for (int vk = 0; vk < 256; ++vk) {
+          // Generic aliases share scan codes with the left modifiers.
+          if (vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU) {
+            continue;
+          }
           if ((keys[vk] & 0x80) == 0) {
             continue;
           }
           if (KeyButton button = m_keyState->virtualKeyToButton(static_cast<KeyID>(vk)); button != 0) {
-            fakeLocalKey(button, true);
+            fakeLocalKey(button, true, kKeyboardFollowCompensation);
             LOG_VERBOSE("keyboard follow: restored key button %d locally", button);
           }
         }
       }
     }
 
-    m_hook.setIgnoreInjected(false);
     m_keyboardFollowDiverted = divert;
   }
 
@@ -1759,16 +1763,18 @@ LRESULT CALLBACK MSWindowsScreen::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LP
   return result;
 }
 
-void MSWindowsScreen::fakeLocalKey(KeyButton button, bool press) const
+void MSWindowsScreen::fakeLocalKey(KeyButton button, bool press, ULONG_PTR extraInfo) const
 {
-  INPUT input;
+  INPUT input{};
   input.type = INPUT_KEYBOARD;
   input.ki.wVk = m_keyState->mapButtonToVirtualKey(button);
-  DWORD pressFlag = press ? KEYEVENTF_EXTENDEDKEY : KEYEVENTF_KEYUP;
-  input.ki.dwFlags = pressFlag;
+  input.ki.wScan = button & 0xff;
+  input.ki.dwFlags = (press ? 0 : KEYEVENTF_KEYUP) | ((button & 0x100) ? KEYEVENTF_EXTENDEDKEY : 0);
   input.ki.time = 0;
-  input.ki.dwExtraInfo = 0;
-  SendInput(1, &input, sizeof(input));
+  input.ki.dwExtraInfo = extraInfo;
+  if (SendInput(1, &input, sizeof(input)) != 1) {
+    LOG_WARN("failed to synthesize local key button %d: %d", button, GetLastError());
+  }
 }
 
 //

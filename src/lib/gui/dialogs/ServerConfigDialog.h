@@ -8,9 +8,9 @@
 
 #pragma once
 
-#include "ScreenSetupModel.h"
 #include "common/NetworkProtocol.h"
-#include "config/ServerConfig.h"
+#include "gui/ScreenSetupModel.h"
+#include "gui/config/ServerConfig.h"
 
 #include <QDialog>
 
@@ -58,6 +58,7 @@ protected:
   void toggleDefaultLockToComputerState(bool state);
   void toggleLockToComputer(bool disabled);
   void toggleWin32Foreground(bool enabled);
+  void setInputMode(int index);
 
   void toggleClipboard(bool enabled);
   void setClipboardLimit(int limit);
@@ -114,6 +115,7 @@ private:
   bool m_enableSwitchDoubleTap;
   bool m_originalServerConfigIsExternal;
   bool m_win32keepForeground;
+  bool m_keyboardFollow = false;
   bool m_disableLockToComputer;
   bool m_defaultLockToComputerState;
   QString m_originalServerConfigUsesExternalFile;

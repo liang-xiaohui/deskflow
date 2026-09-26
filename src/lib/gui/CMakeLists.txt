@@ -123,4 +123,5 @@ target_link_libraries(${target}
     platform
     net
     Qt6::Widgets
+    Qt6::Svg
 )

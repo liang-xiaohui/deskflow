@@ -149,6 +149,9 @@ void IpcServer::processMessage(QLocalSocket *clientSocket, const QString &messag
       writeToClientSocket(clientSocket, pending);
     }
     m_pendingMessages.clear();
+    for (const auto &message : std::as_const(m_retainedMessages)) {
+      writeToClientSocket(clientSocket, message);
+    }
   } else if (command == QStringLiteral("noop")) {
     LOG_DEBUG("%s ipc server got noop message", m_typeName.constData());
     writeToClientSocket(clientSocket, QStringLiteral("ok"));
@@ -159,11 +162,17 @@ void IpcServer::processMessage(QLocalSocket *clientSocket, const QString &messag
   clientSocket->flush();
 }
 
-void IpcServer::broadcastCommand(const QString &command, const QString &args)
+void IpcServer::broadcastCommand(const QString &command, const QString &args, bool retain)
 {
   const auto message = args.isEmpty() ? command : QStringLiteral("%1=%2").arg(command, args);
+  if (retain) {
+    m_retainedMessages.insert(command, message);
+  }
 
   if (m_clients.isEmpty()) {
+    if (retain) {
+      return;
+    }
     LOG_VERBOSE(
         "%s ipc server has no clients, message queued: %s", m_typeName.constData(), message.toUtf8().constData()
     );

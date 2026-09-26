@@ -21,6 +21,26 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_3">
    <item>
+    <widget class="QGroupBox" name="groupInputMode">
+     <property name="title"><string>Input sharing</string></property>
+     <layout class="QVBoxLayout" name="layoutInputMode">
+      <item>
+       <widget class="QComboBox" name="comboInputMode">
+        <property name="accessibleName"><string>Input sharing mode</string></property>
+        <item><property name="text"><string>Extended screen mode</string></property></item>
+        <item><property name="text"><string>Mouse follow mode</string></property></item>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="lblInputModeDescription">
+        <property name="wordWrap"><bool>true</bool></property>
+        <property name="textFormat"><enum>Qt::TextFormat::PlainText</enum></property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QTabWidget" name="tabWidget">
      <widget class="QWidget" name="tabComputers">
       <attribute name="title">

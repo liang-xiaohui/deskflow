@@ -19,6 +19,7 @@
 
 #include <climits>
 #include <map>
+#include <memory>
 #include <set>
 #include <vector>
 
@@ -39,6 +40,7 @@ This class implements the top-level server algorithms for deskflow.
 */
 class Server
 {
+  friend class ServerTests;
   using ServerConfig = deskflow::server::Config;
 
 public:
@@ -390,12 +392,15 @@ private:
   // of m_active.  A null target means the keyboard stays on this computer.
   bool m_keyboardFollow = false;
   BaseClientProxy *m_keyboardTarget = nullptr;
+  std::map<KeyButton, KeyID> m_keyboardFollowModifiers;
 
   // current configuration
   ServerConfig *m_config = nullptr;
 
   // input filter (from m_config);
   InputFilter *m_inputFilter = nullptr;
+  // Follow mode passes input through without registering the stored screen hotkeys.
+  std::unique_ptr<InputFilter> m_followInputFilter;
 
   // state saved when screen saver activates
   BaseClientProxy *m_activeSaver = nullptr;

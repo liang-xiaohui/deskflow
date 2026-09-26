@@ -58,6 +58,12 @@ install(
 
 if(WIN32)
   set_target_properties(${target} PROPERTIES LINK_FLAGS "/NODEFAULTLIB:LIBCMT")
+  add_custom_target(deploy_app_translations
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>/translations"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DESKFLOW_QM_FILES} "$<TARGET_FILE_DIR:${target}>/translations"
+    DEPENDS app_translations
+  )
+  add_dependencies(${target} deploy_app_translations)
 
   install(RUNTIME_DEPENDENCY_SET guiDeps
     ${WIN32_RUNTIME_DEPENDENCY_SET_ARGS}
@@ -71,12 +77,13 @@ if(WIN32)
   add_custom_command(
     TARGET ${target} POST_BUILD
     COMMAND ${DEPLOYQT}
+      --qtpaths "$<TARGET_FILE:Qt6::qtpaths>"
       --no-compiler-runtime
       --no-system-d3d-compiler
       --no-opengl-sw
       --no-quick-import
       --dir "${QT_DEPENDS_DIR}"
-      --plugindir "${QT_DEPENDS_DIR}/plugins"
+      --plugindir "${QT_DEPENDS_DIR}"
       $<TARGET_FILE:${target}>
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
       ${QT_DEPENDS_DIR}

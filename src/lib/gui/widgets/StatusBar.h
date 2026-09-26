@@ -23,6 +23,8 @@ public:
   explicit StatusBar(QWidget *parent = nullptr);
   void setStatus(ConnectionState connectionState, ProcessState processState, bool isServer);
   void setServerClients(const QStringList &clients);
+  void setKeyboardTarget(const QString &target);
+  QString statusText() const;
   void setSecurityIconVisible(bool visible);
   void setConnectionInterval(int newInterval);
   bool securityIconVisible() const;
@@ -45,6 +47,8 @@ private:
   QPushButton *m_btnFingerprint = nullptr;
   QLabel *m_lblSecurityIcon = nullptr;
   QLabel *m_lblStatus = nullptr;
+  QLabel *m_lblKeyboardTarget = nullptr;
+  QString m_keyboardTarget;
   QPushButton *m_btnUpdate = nullptr;
   bool m_encrypted = false;
   QString m_securityLevel;

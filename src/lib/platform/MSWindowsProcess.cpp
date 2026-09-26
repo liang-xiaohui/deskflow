@@ -137,7 +137,8 @@ void MSWindowsProcess::shutdown(HANDLE handle, DWORD pid, int timeout)
   }
 
   LOG_DEBUG("sending close event to close process gracefully");
-  HANDLE hCloseEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, kCloseEventName);
+  const auto closeEventName = std::wstring(kCloseEventName) + L"-" + std::to_wstring(pid);
+  HANDLE hCloseEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, closeEventName.c_str());
   if (hCloseEvent != nullptr) { // NOSONAR -- Readability
     SetEvent(hCloseEvent);
     CloseHandle(hCloseEvent);

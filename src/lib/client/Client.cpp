@@ -488,6 +488,7 @@ bool Client::setupScreen(int16_t protocolMinor)
   assert(m_server == nullptr);
 
   m_ready = false;
+  m_keyboardFollowSupported = false;
 
   // only 1.6 and later have a proxy: the clipboard, mouse wheel and key message formats
   // differ below that, and nothing older (synergy 1.4 and earlier) still needs supporting.
@@ -563,6 +564,14 @@ void Client::cleanupConnection()
 
 void Client::cleanupScreen()
 {
+  if (m_isKeyboardFollowTarget) {
+    m_screen->getPlatformScreen()->fakeAllKeysUp();
+  }
+  // All disconnect paths (including stream errors and destruction) come here.
+  cleanupFollowTimer();
+  m_keyboardFollowSupported = false;
+  m_keyboardFollowMode = false;
+  m_screen->getPlatformScreen()->setKeyboardFollowLocalCursor(false);
   if (m_server != nullptr) {
     if (m_ready) {
       m_screen->disable();
@@ -592,7 +601,7 @@ void Client::cleanupStream()
 
 void Client::setupFollowTimer()
 {
-  if (!m_keyboardFollowSupported || m_followTimer != nullptr) {
+  if (!m_ready || !m_keyboardFollowSupported || !m_keyboardFollowMode || m_followTimer != nullptr) {
     return;
   }
 
@@ -601,7 +610,7 @@ void Client::setupFollowTimer()
   // notice that the user grabbed the mouse on this computer.
   m_followTimer = m_events->newTimer(kFollowPollInterval, nullptr);
   m_events->addHandler(EventTypes::Timer, m_followTimer, [this](const auto &) { handleFollowTimer(); });
-  m_hasFollowPosition = false;
+  m_hasFollowPosition = m_screen->getPlatformScreen()->getLocalCursorPos(m_followX, m_followY);
   m_followCooldown = 0;
   LOG_VERBOSE("keyboard follow: watching the local cursor");
 }
@@ -620,14 +629,28 @@ void Client::cleanupFollowTimer()
 
 void Client::handleFollowTimer()
 {
-  if (m_server == nullptr || m_isKeyboardFollowTarget) {
-    // we already hold the keyboard, no need to keep asking for it
+  if (m_server == nullptr || !m_ready || !m_keyboardFollowMode) {
     return;
+  }
+
+  // The cooldown is time based, including ticks when the mouse is stationary.
+  if (m_followCooldown > 0) {
+    --m_followCooldown;
   }
 
   int32_t x = 0;
   int32_t y = 0;
   if (!m_screen->getPlatformScreen()->getLocalCursorPos(x, y)) {
+    m_hasFollowPosition = false;
+    return;
+  }
+
+  // Keep sampling while we own the keyboard. Otherwise motion made during our
+  // ownership looks like new activity after another computer takes it away.
+  if (m_isKeyboardFollowTarget) {
+    m_hasFollowPosition = true;
+    m_followX = x;
+    m_followY = y;
     return;
   }
 
@@ -638,14 +661,13 @@ void Client::handleFollowTimer()
     return;
   }
 
-  if (std::abs(x - m_followX) + std::abs(y - m_followY) < kFollowMoveThreshold) {
+  if (std::abs(int64_t(x) - m_followX) + std::abs(int64_t(y) - m_followY) < kFollowMoveThreshold) {
     return;
   }
   m_followX = x;
   m_followY = y;
 
   if (m_followCooldown > 0) {
-    --m_followCooldown;
     return;
   }
   m_followCooldown = kFollowClaimCooldownTicks;
@@ -656,22 +678,40 @@ void Client::handleFollowTimer()
 
 void Client::keyboardFollowChanged(bool isTarget, bool followMode)
 {
+  if (followMode && !m_screen->getPlatformScreen()->supportsKeyboardFollow()) {
+    LOG_ERR("keyboard follow is not implemented by this platform backend");
+    // Parsing owns the proxy stack; defer disconnect until after it returns.
+    m_events->addEvent(Event(
+        EventTypes::ClientDisconnectRequested, m_stream->getEventTarget(),
+        new DisconnectRequest(DisconnectRequest::Kind::Disconnect, "keyboard follow requires a supported platform")
+    ));
+    return;
+  }
   LOG_VERBOSE(
       "keyboard follow: %s (mode=%s)", isTarget ? "the keyboard is here" : "the keyboard went away",
       followMode ? "on" : "off"
   );
-  m_isKeyboardFollowTarget = isTarget;
+  const bool wasTarget = m_isKeyboardFollowTarget;
+  m_isKeyboardFollowTarget = isTarget && followMode;
   m_keyboardFollowMode = followMode;
   m_followCooldown = 0;
+  // Discard motion that happened before this ownership change, even between
+  // the last timer tick and the server's notification.
+  m_hasFollowPosition = m_screen->getPlatformScreen()->getLocalCursorPos(m_followX, m_followY);
 
   // In keyboard follow mode the server never drives our cursor, so it belongs to
   // our own mouse and must stay visible.
   m_screen->getPlatformScreen()->setKeyboardFollowLocalCursor(followMode);
 
-  if (!isTarget) {
+  if (wasTarget && !m_isKeyboardFollowTarget) {
     // Release anything we may still be holding down, otherwise a key that was
     // pressed while we had the keyboard would stay down forever.
     m_screen->getPlatformScreen()->fakeAllKeysUp();
+  }
+  if (followMode) {
+    setupFollowTimer();
+  } else {
+    cleanupFollowTimer();
   }
 }
 

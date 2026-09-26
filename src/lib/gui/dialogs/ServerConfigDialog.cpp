@@ -20,6 +20,7 @@
 
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QSignalBlocker>
 
 using enum ScreenConfig::SwitchCorner;
 
@@ -90,6 +91,7 @@ void ServerConfigDialog::save()
   Settings::setValue(Settings::Server::SwitchDoubleTap, m_switchDoubleTap);
   Settings::setValue(Settings::Server::RelativeMouseMoves, m_relativeMouseMoves);
   Settings::setValue(Settings::Server::Win32KeepForeground, m_win32keepForeground);
+  Settings::setValue(Settings::Server::KeyboardFollow, m_keyboardFollow);
   Settings::setValue(Settings::Server::ExternalConfig, ui->groupExternalConfig->isChecked());
   Settings::setValue(Settings::Server::ExternalConfigFile, ui->lineConfigFile->text());
 
@@ -345,6 +347,12 @@ void ServerConfigDialog::toggleWin32Foreground(bool enabled)
   setButtonBoxEnabledButtons();
 }
 
+void ServerConfigDialog::setInputMode(int index)
+{
+  m_keyboardFollow = index == 1;
+  updateControls();
+}
+
 void ServerConfigDialog::addClient()
 {
   addComputer("", false);
@@ -361,6 +369,9 @@ void ServerConfigDialog::toggleExternalConfig(bool checked)
   ui->widgetExternalConfigControls->setEnabled(checked);
   ui->tabWidget->setTabEnabled(0, !checked);
   ui->tabWidget->setTabEnabled(1, !checked);
+  if (m_keyboardFollow) {
+    ui->tabWidget->setTabEnabled(1, false);
+  }
   serverConfig().setUseExternalConfig(checked);
   setButtonBoxEnabledButtons();
 }
@@ -390,6 +401,7 @@ void ServerConfigDialog::loadFromConfig()
   m_heartbeatRate = Settings::value(Settings::Server::Heartbeat).toInt();
   m_relativeMouseMoves = Settings::value(Settings::Server::RelativeMouseMoves).toBool();
   m_win32keepForeground = Settings::value(Settings::Server::Win32KeepForeground).toBool();
+  m_keyboardFollow = Settings::value(Settings::Server::KeyboardFollow).toBool();
   m_enableSwitchDelay = Settings::value(Settings::Server::EnableSwitchDelay).toBool();
   m_switchDelay = Settings::value(Settings::Server::SwitchDelay).toInt();
   m_enableSwitchDoubleTap = Settings::value(Settings::Server::EnableSwitchDoubleTap).toBool();
@@ -439,6 +451,8 @@ void ServerConfigDialog::resetFromSettings()
 
 void ServerConfigDialog::refreshControls()
 {
+  const QSignalBlocker modeBlocker(ui->comboInputMode);
+  ui->comboInputMode->setCurrentIndex(m_keyboardFollow ? 1 : 0);
   ui->rbProtocolSynergy->setChecked(m_protocol == NetworkProtocol::Synergy);
   ui->rbProtocolBarrier->setChecked(m_protocol == NetworkProtocol::Barrier);
   ui->cbHeartbeat->setChecked(m_enableHeartbeat);
@@ -491,6 +505,7 @@ void ServerConfigDialog::initConnections() const
   connect(ui->cbHeartbeat, &QCheckBox::toggled, this, &ServerConfigDialog::toggleHeartbeat);
   connect(ui->sbHeartbeat, QOverload<int>::of(&QSpinBox::valueChanged), this, &ServerConfigDialog::setHeartbeat);
   connect(ui->cbWin32KeepForeground, &QCheckBox::toggled, this, &ServerConfigDialog::toggleWin32Foreground);
+  connect(ui->comboInputMode, &QComboBox::currentIndexChanged, this, &ServerConfigDialog::setInputMode);
   connect(ui->cbSwitchDelay, &QCheckBox::toggled, this, &ServerConfigDialog::toggleSwitchDelay);
   connect(ui->sbSwitchDelay, QOverload<int>::of(&QSpinBox::valueChanged), this, &ServerConfigDialog::setSwitchDelay);
   connect(ui->cbSwitchDoubleTap, &QCheckBox::toggled, this, &ServerConfigDialog::toggleSwitchDoubleTap);
@@ -535,6 +550,29 @@ void ServerConfigDialog::updateControls() const
   ui->sbSwitchDoubleTap->setEnabled(writable && ui->cbSwitchDoubleTap->isChecked());
   ui->sbSwitchDelay->setEnabled(writable && ui->cbSwitchDelay->isChecked());
   ui->groupExternalConfig->setEnabled(writable);
+  ui->comboInputMode->setEnabled(writable && deskflow::platform::isWindows());
+  ui->groupSwitch->setEnabled(writable && !m_keyboardFollow);
+  ui->cbRelativeMouseMoves->setEnabled(writable && !m_keyboardFollow);
+  ui->cbWin32KeepForeground->setEnabled(writable && !m_keyboardFollow);
+  ui->cbDefaultLockToComputerState->setEnabled(writable && !m_keyboardFollow);
+  ui->cbDisableLockToComputer->setEnabled(writable && !m_keyboardFollow);
+  ui->tabWidget->setTabEnabled(1, !m_keyboardFollow && !ui->groupExternalConfig->isChecked());
+  ui->lblInputModeDescription->setText(
+      m_keyboardFollow
+          ? tr("Each computer uses its own mouse. The shared keyboard goes to the computer whose mouse moved last. "
+               "Screen positions, edge switching and hotkeys are not used. Clipboard sharing remains available. "
+               "Both computers need a version that supports this mode. Save to apply and restart sharing.")
+          : tr("Use one keyboard and mouse. Move the pointer across a screen edge to control another computer. "
+               "Arrange the computers below to match your displays.")
+  );
+  if (!deskflow::platform::isWindows()) {
+    ui->lblInputModeDescription->setText(tr("Keyboard follow mode is currently available on Windows only."));
+  }
+  ui->label_2->setText(
+      m_keyboardFollow ? tr("Add the computers that can receive the keyboard. Their positions in this grid do not "
+                            "affect keyboard follow mode.")
+                       : tr("Configure the layout of your computer displays by dragging to where you want.")
+  );
   setButtonBoxEnabledButtons();
 }
 
@@ -545,6 +583,7 @@ void ServerConfigDialog::restoreFromDefaults()
   m_heartbeatRate = Settings::defaultValue(Settings::Server::Heartbeat).toInt();
   m_relativeMouseMoves = Settings::defaultValue(Settings::Server::RelativeMouseMoves).toBool();
   m_win32keepForeground = Settings::defaultValue(Settings::Server::Win32KeepForeground).toBool();
+  m_keyboardFollow = Settings::defaultValue(Settings::Server::KeyboardFollow).toBool();
   m_enableSwitchDelay = Settings::defaultValue(Settings::Server::EnableSwitchDelay).toBool();
   m_switchDelay = Settings::defaultValue(Settings::Server::SwitchDelay).toInt();
   m_enableSwitchDoubleTap = Settings::defaultValue(Settings::Server::EnableSwitchDoubleTap).toBool();
@@ -601,6 +640,7 @@ bool ServerConfigDialog::isGeneralConfigModified() const
          m_switchDoubleTap != Settings::value(Settings::Server::SwitchDoubleTap).toInt() ||
          m_relativeMouseMoves != Settings::value(Settings::Server::RelativeMouseMoves).toBool() ||
          m_win32keepForeground != Settings::value(Settings::Server::Win32KeepForeground).toBool() ||
+         m_keyboardFollow != Settings::value(Settings::Server::KeyboardFollow).toBool() ||
          m_disableLockToComputer != Settings::value(Settings::Server::DisableLockToComputer).toBool() ||
          m_defaultLockToComputerState != Settings::value(Settings::Server::DefaultLockToComputerState).toBool();
 }
@@ -620,6 +660,7 @@ bool ServerConfigDialog::isGeneralConfigDefault() const
          m_switchDoubleTap == Settings::defaultValue(Settings::Server::SwitchDoubleTap).toInt() &&
          m_relativeMouseMoves == Settings::defaultValue(Settings::Server::RelativeMouseMoves).toBool() &&
          m_win32keepForeground == Settings::defaultValue(Settings::Server::Win32KeepForeground).toBool() &&
+         m_keyboardFollow == Settings::defaultValue(Settings::Server::KeyboardFollow).toBool() &&
          m_disableLockToComputer == Settings::defaultValue(Settings::Server::DisableLockToComputer).toBool() &&
          m_defaultLockToComputerState == Settings::defaultValue(Settings::Server::DefaultLockToComputerState).toBool();
 }

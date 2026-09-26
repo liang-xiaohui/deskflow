@@ -18,6 +18,7 @@
 #include "deskflow/PacketStreamFilter.h"
 #include "deskflow/ProtocolTypes.h"
 #include "deskflow/Screen.h"
+#include "deskflow/ScreenException.h"
 #include "deskflow/StreamChunker.h"
 #include "deskflow/ipc/CoreIpc.h"
 #include "net/TCPSocket.h"
@@ -60,10 +61,16 @@ Server::Server(ServerConfig &config, PrimaryClient *primaryClient, deskflow::Scr
   // last, and screens are never switched by cursor movement.
   m_keyboardFollow = Settings::value(Settings::Server::KeyboardFollow).toBool();
   if (m_keyboardFollow) {
+    if (!m_screen->getPlatformScreen()->supportsKeyboardFollow()) {
+      LOG_ERR("keyboard follow requires a supported platform with input hooks enabled");
+      throw ScreenOpenFailureException();
+    }
     LOG_INFO(
         "keyboard follow mode enabled: the keyboard targets the computer whose mouse moved last, "
         "screens are never switched by cursor movement"
     );
+    m_followInputFilter = std::make_unique<InputFilter>(m_events);
+    m_inputFilter = m_followInputFilter.get();
   }
 
   // clear clipboards
@@ -159,6 +166,9 @@ Server::Server(ServerConfig &config, PrimaryClient *primaryClient, deskflow::Scr
     LOG_INFO("default screen lock is on, locking cursor to screen");
     m_lockedToScreen = true;
   }
+  if (m_keyboardFollow) {
+    ipcSendToClient("keyboardTarget", QString::fromStdString(primaryName));
+  }
 }
 
 Server::~Server()
@@ -234,7 +244,7 @@ bool Server::setConfig(const ServerConfig &config)
   // we will unfortunately generate a warning.  if the user has
   // configured a LockCursorToScreenAction then we don't add
   // ScrollLock as a hotkey.
-  if (!m_disableLockToScreen && !m_config->hasLockToScreenAction()) {
+  if (!m_keyboardFollow && !m_disableLockToScreen && !m_config->hasLockToScreenAction()) {
     IPlatformScreen::KeyInfo *key = IPlatformScreen::KeyInfo::alloc(kKeyScrollLock, 0, 0, 0);
     InputFilter::Rule rule(new InputFilter::KeystrokeCondition(m_events, key));
     rule.adoptAction(new InputFilter::LockCursorToScreenAction(m_events), true);
@@ -1503,6 +1513,9 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
 
   // send the new clipboard to the active screen
   m_active->setClipboard(id, &clipboard.m_clipboard);
+  if (m_keyboardFollow && keyboardSink() != m_active) {
+    keyboardSink()->setClipboard(id, &clipboard.m_clipboard);
+  }
 }
 
 void Server::onScreensaver(bool activated)
@@ -1573,6 +1586,16 @@ void Server::setKeyboardTarget(BaseClientProxy *target)
   }
 
   BaseClientProxy *oldTarget = m_keyboardTarget;
+  if (m_enableClipboard) {
+    // Follow mode never calls leave(), where the primary clipboard would
+    // normally be fetched before delivering it to the new destination.
+    for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
+      const auto &clipboard = m_clipboards[id];
+      if (clipboard.m_clipboardOwner == getName(m_primaryClient)) {
+        onClipboardChanged(m_primaryClient, id, clipboard.m_clipboardSeqNum);
+      }
+    }
+  }
   m_keyboardTarget = target;
 
   // Only while a client holds the keyboard does the local keyboard have to be
@@ -1585,7 +1608,23 @@ void Server::setKeyboardTarget(BaseClientProxy *target)
   }
   if (m_keyboardTarget != nullptr) {
     notifyKeyboardFollow(m_keyboardTarget, true);
+    // Seed held modifiers so Shift/Ctrl + a local mouse click works immediately
+    // on the new destination, before any additional keyboard event arrives.
+    for (const auto &[button, key] : m_keyboardFollowModifiers) {
+      m_keyboardTarget->keyDown(
+          key, m_screen->getActiveModifiers(), button, AppUtil::instance().getCurrentLanguageCode()
+      );
+    }
+    if (m_enableClipboard) {
+      for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
+        if (m_clipboards[id].m_clipboard.marshall().size() <= getMaximumClipboardSizeBytes()) {
+          m_keyboardTarget->setClipboard(id, &m_clipboards[id].m_clipboard);
+        }
+      }
+    }
   }
+
+  ipcSendToClient("keyboardTarget", QString::fromStdString(getName(keyboardSink())));
 
   LOG_INFO(
       "keyboard follow: the keyboard is now on \"%s\"",
@@ -1620,6 +1659,27 @@ void Server::onKeyDown(KeyID id, KeyModifierMask mask, KeyButton button, const s
   LOG_VERBOSE("onKeyDown id=%d mask=0x%04x button=0x%04x lang=%s", id, mask, button, lang.c_str());
   assert(m_active != nullptr);
 
+  if (m_keyboardFollow) {
+    switch (id) {
+    case kKeyShift_L:
+    case kKeyShift_R:
+    case kKeyControl_L:
+    case kKeyControl_R:
+    case kKeyAlt_L:
+    case kKeyAlt_R:
+    case kKeyMeta_L:
+    case kKeyMeta_R:
+    case kKeySuper_L:
+    case kKeySuper_R:
+      m_keyboardFollowModifiers[button] = id;
+      break;
+    default:
+      break;
+    }
+    keyboardSink()->keyDown(id, mask, button, lang);
+    return;
+  }
+
   // relay
   if (!m_keyboardBroadcasting && IKeyState::KeyInfo::isDefault(screens)) {
     keyboardSink()->keyDown(id, mask, button, lang);
@@ -1642,6 +1702,11 @@ void Server::onKeyUp(KeyID id, KeyModifierMask mask, KeyButton button, const cha
 {
   LOG_VERBOSE("onKeyUp id=%d mask=0x%04x button=0x%04x", id, mask, button);
   assert(m_active != nullptr);
+  if (m_keyboardFollow) {
+    m_keyboardFollowModifiers.erase(button);
+    keyboardSink()->keyUp(id, mask, button);
+    return;
+  }
 
   // relay
   if (!m_keyboardBroadcasting && IKeyState::KeyInfo::isDefault(screens)) {
@@ -1999,9 +2064,10 @@ bool Server::addClient(BaseClientProxy *client)
   m_events->addHandler(EventTypes::ClipboardChanged, client->getEventTarget(), [this, client](const auto &e) {
     handleClipboardChanged(e, client);
   });
-  m_events->addHandler(EventTypes::ServerKeyboardFollowRequested, client->getEventTarget(), [this, client](const auto &) {
-    handleKeyboardFollowRequest(client);
-  });
+  m_events->addHandler(
+      EventTypes::ServerKeyboardFollowRequested, client->getEventTarget(),
+      [this, client](const auto &) { handleKeyboardFollowRequest(client); }
+  );
 
   // add to list
   m_clientSet.insert(client);
@@ -2044,6 +2110,7 @@ bool Server::removeClient(BaseClientProxy *client)
   if (m_keyboardTarget == client) {
     m_keyboardTarget = nullptr;
     m_screen->getPlatformScreen()->setKeyboardFollowDivert(false);
+    ipcSendToClient("keyboardTarget", QString::fromStdString(getName(m_primaryClient)));
     LOG_INFO("keyboard follow: the keyboard went back to \"%s\"", getName(m_active).c_str());
   }
 

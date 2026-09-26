@@ -122,6 +122,13 @@ public:
   */
   virtual void setOptions(const OptionsList &options) = 0;
 
+  //! Whether this backend implements keyboard diversion (primary) or local
+  //! cursor preservation and activity sampling (secondary) for follow mode.
+  virtual bool supportsKeyboardFollow() const
+  {
+    return false;
+  }
+
   //! Divert the keyboard to another computer
   /*!
   Used by keyboard follow mode (server/keyboardFollow).  When \p divert is true

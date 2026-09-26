@@ -34,6 +34,7 @@
 
 #include <QCheckBox>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QLocalServer>
@@ -48,6 +49,7 @@
 #include <QRegularExpressionValidator>
 #include <QScreen>
 #include <QScrollBar>
+#include <QSignalBlocker>
 
 #include <memory>
 
@@ -83,7 +85,7 @@ MainWindow::MainWindow()
 {
   ui->setupUi(this);
 
-  setWindowIcon(QIcon::fromTheme(kRevFqdnName));
+  setWindowIcon(QIcon::fromTheme(kRevFqdnName, QIcon(QStringLiteral(":/deskflow.ico"))));
 
   addDockWidget(Qt::BottomDockWidgetArea, m_logDock);
 
@@ -216,6 +218,8 @@ void MainWindow::setupControls()
   const auto coreMode = Settings::value(Settings::Core::CoreMode).value<Settings::CoreMode>();
   ui->rbModeClient->setChecked(coreMode == Settings::CoreMode::Client);
   ui->rbModeServer->setChecked(coreMode == Settings::CoreMode::Server);
+  ui->comboSharingMode->setCurrentIndex(Settings::value(Settings::Server::KeyboardFollow).toBool() ? 1 : 0);
+  ui->comboSharingMode->setEnabled(Settings::isWritable() && deskflow::platform::isWindows());
 
   ui->lineEditName->setValidator(new QRegularExpressionValidator(m_nameRegEx, this));
   ui->lineEditName->setVisible(false);
@@ -240,6 +244,13 @@ void MainWindow::setupControls()
 // signal is emitted from the thread that owns the receiver's object.
 void MainWindow::connectSlots()
 {
+  connect(ui->comboSharingMode, &QComboBox::currentIndexChanged, this, [this](int index) {
+    Settings::setValue(Settings::Server::KeyboardFollow, index == 1);
+    Settings::save();
+    if (m_coreProcess.isStarted()) {
+      m_coreProcess.restart();
+    }
+  });
   connect(Settings::instance(), &Settings::serverSettingsChanged, this, &MainWindow::serverConfigSaving);
   connect(Settings::instance(), &Settings::settingsChanged, this, &MainWindow::settingsChanged);
 
@@ -250,6 +261,7 @@ void MainWindow::connectSlots()
       Qt::QueuedConnection
   );
   connect(&m_coreProcess, &CoreProcess::connectionStateChanged, this, &MainWindow::coreConnectionStateChanged);
+  connect(&m_coreProcess, &CoreProcess::keyboardTargetChanged, this, [this](const QString &) { updateStatus(); });
   connect(&m_coreProcess, &CoreProcess::secureSocket, this, &MainWindow::secureSocket);
   connect(
       &m_coreProcess, &CoreProcess::daemonIpcClientConnectionFailed, this, &MainWindow::daemonIpcClientConnectionFailed
@@ -346,6 +358,11 @@ void MainWindow::toggleLogVisible(bool visible)
 
 void MainWindow::settingsChanged(const QString &key)
 {
+  if (key == Settings::Server::KeyboardFollow) {
+    const QSignalBlocker blocker(ui->comboSharingMode);
+    ui->comboSharingMode->setCurrentIndex(Settings::value(key).toBool() ? 1 : 0);
+    return;
+  }
   if (key == Settings::Log::Level) {
     m_coreProcess.applyLogLevel();
     return;
@@ -400,6 +417,25 @@ void MainWindow::coreProcessError(CoreProcess::Error error)
                          .arg(mode, Settings::serverConfigFile()));
     }
     QMessageBox::warning(this, kAppName, message);
+  } else if (error == CoreProcess::Error::ServiceVersionMismatch) {
+    showAndActivate();
+    QMessageBox message(
+        QMessageBox::Warning, tr("Service version mismatch"),
+        tr("The installed Deskflow service belongs to a different build. Sharing was not started.\n\n"
+           "Use this version to stop the old service's core and run the core bundled with this GUI. "
+           "This saves desktop mode in Settings. To run as a background service, install the matching service."),
+        QMessageBox::Cancel, this
+    );
+    auto *useBundled = message.addButton(tr("Use this version"), QMessageBox::AcceptRole);
+    message.setDefaultButton(useBundled);
+    message.exec();
+    if (message.clickedButton() == useBundled && !m_coreProcess.useBundledCore()) {
+      QMessageBox::warning(
+          this, kAppName,
+          tr("Could not switch to the bundled core. Check that settings are writable and the core exists, "
+             "then try again.")
+      );
+    }
   }
 }
 
@@ -692,6 +728,7 @@ void MainWindow::setupTrayIcon()
   m_trayIcon->setContextMenu(trayMenu);
 
   setTrayIcon();
+  updateStatus();
   m_trayIcon->show();
 }
 
@@ -731,12 +768,12 @@ void MainWindow::saveSettings() const
 
 void MainWindow::setTrayIcon()
 {
-  static const auto fallbackPath = QStringLiteral(":/icons/%1-%2/apps/64/%3");
+  static const auto fallbackPath = QStringLiteral(":/icons/%1-%2/apps/64/%3.svg");
 
   QString themeIcon = kRevFqdnName;
   if (!Settings::value(Settings::Gui::SymbolicTrayIcon).toBool()) {
     if (deskflow::platform::isMac())
-      m_trayIcon->setIcon(QIcon::fromTheme(themeIcon));
+      m_trayIcon->setIcon(QIcon::fromTheme(themeIcon, QIcon(QStringLiteral(":/deskflow.ico"))));
     else
       m_trayIcon->setIcon(QIcon(fallbackPath.arg(kAppId, QStringLiteral("dark"), themeIcon)));
     return;
@@ -942,12 +979,20 @@ void MainWindow::updateStatus()
     ui->btnEditName->setVisible(process == Stopped);
   }
   m_statusBar->setStatus(connection, process, isServer);
+  const auto target = process == Started && isServer ? m_coreProcess.keyboardTarget() : QString();
+  m_statusBar->setKeyboardTarget(target);
+  m_trayIcon->setToolTip(
+      target.isEmpty() ? m_statusBar->statusText() : tr("%1\nKeyboard → %2").arg(m_statusBar->statusText(), target)
+  );
 }
 
 void MainWindow::coreProcessStateChanged(ProcessState state)
 {
   using enum ProcessState;
   updateStatus();
+  ui->comboSharingMode->setEnabled(
+      Settings::isWritable() && deskflow::platform::isWindows() && (state == Started || state == Stopped)
+  );
   if (state == Started) {
     qDebug() << "recording that core has started";
     Settings::setValue(Settings::Gui::AutoStartCore, true);
@@ -1021,7 +1066,7 @@ void MainWindow::changeEvent(QEvent *e)
   QMainWindow::changeEvent(e);
   if (e->type() == QEvent::PaletteChange) {
     updateIconTheme();
-    setWindowIcon(QIcon::fromTheme(kRevFqdnName));
+    setWindowIcon(QIcon::fromTheme(kRevFqdnName, QIcon(QStringLiteral(":/deskflow.ico"))));
     setTrayIcon();
   } else if (e->type() == QEvent::LanguageChange) {
     ui->retranslateUi(this);
@@ -1206,6 +1251,7 @@ void MainWindow::serverClientsChanged(const QStringList &clients)
   if (m_coreProcess.mode() != CoreMode::Server || !m_coreProcess.isStarted())
     return;
   m_statusBar->setServerClients(clients);
+  updateStatus();
 }
 
 void MainWindow::daemonIpcClientConnectionFailed()

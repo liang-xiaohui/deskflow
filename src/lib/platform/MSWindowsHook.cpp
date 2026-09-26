@@ -10,6 +10,7 @@
 #include "base/Log.h"
 #include "deskflow/ScreenException.h"
 
+#include <atomic>
 #include <cstring>
 #include <mutex>
 
@@ -29,11 +30,7 @@ static EHookMode g_mode = kHOOK_DISABLE;
 
 // keyboard follow mode: true while the keyboard has been handed to another
 // computer and the local keyboard therefore has to be swallowed
-static bool g_keyboardDivert = false;
-
-// true while the server synthesizes keys for its own local applications (see
-// MSWindowsHook::setIgnoreInjected)
-static bool g_ignoreInjected = false;
+static std::atomic<bool> g_keyboardDivert{false};
 static uint32_t g_zoneSides = 0;
 static int32_t g_zoneSize = 0;
 static int32_t g_xScreen = 0;
@@ -45,7 +42,8 @@ static WPARAM g_deadRelease = 0;
 static LPARAM g_deadLParam = 0;
 static BYTE g_deadKeyState[256] = {0};
 static BYTE g_keyState[256] = {0};
-static bool g_keyStateValid = false;
+static BYTE g_physicalKeyState[256] = {0};
+static bool g_physicalKeyStateValid = false;
 static std::mutex g_keyStateMutex;
 static DWORD g_hookThread = 0;
 static bool g_fakeServerInput = false;
@@ -108,6 +106,12 @@ int MSWindowsHook::init(DWORD threadID)
 
   // set defaults
   g_mode = kHOOK_DISABLE;
+  g_keyboardDivert = false;
+  {
+    std::lock_guard<std::mutex> lock(g_keyStateMutex);
+    std::memset(g_physicalKeyState, 0, sizeof(g_physicalKeyState));
+    g_physicalKeyStateValid = false;
+  }
   g_zoneSides = 0;
   g_zoneSize = 0;
   g_xScreen = 0;
@@ -160,11 +164,6 @@ void MSWindowsHook::setKeyboardDivert(bool divert)
   g_keyboardDivert = divert;
 }
 
-void MSWindowsHook::setIgnoreInjected(bool ignore)
-{
-  g_ignoreInjected = ignore;
-}
-
 // true when local key events must be eaten so they can be relayed.  In keyboard
 // follow mode only the keyboard is diverted; the mouse always stays local.
 static bool isRelayingEvents()
@@ -175,10 +174,10 @@ static bool isRelayingEvents()
 bool MSWindowsHook::getPhysicalKeyState(BYTE keys[256])
 {
   std::lock_guard<std::mutex> lock(g_keyStateMutex);
-  if (g_keyStateValid) {
-    std::memcpy(keys, g_keyState, sizeof(g_keyState));
+  if (g_physicalKeyStateValid) {
+    std::memcpy(keys, g_physicalKeyState, sizeof(g_physicalKeyState));
   }
-  return g_keyStateValid;
+  return g_physicalKeyStateValid;
 }
 
 static void keyboardGetState(BYTE keys[256], DWORD vkCode, bool kf_up)
@@ -192,6 +191,12 @@ static void keyboardGetState(BYTE keys[256], DWORD vkCode, bool kf_up)
   }
 
   std::lock_guard<std::mutex> lock(g_keyStateMutex);
+
+  if (g_mode == kHOOK_KEYBOARD_FOLLOW && g_physicalKeyStateValid) {
+    std::memcpy(keys, g_physicalKeyState, sizeof(g_physicalKeyState));
+    keys[VK_CAPITAL] |= GetKeyState(VK_CAPITAL) & 1;
+    return;
+  }
 
   // Keep track of key state on our own in case GetAsyncKeyState() fails
   g_keyState[vkCode] = kf_up ? 0 : 0x80;
@@ -220,7 +225,6 @@ static void keyboardGetState(BYTE keys[256], DWORD vkCode, bool kf_up)
 
   key = GetKeyState(VK_CAPITAL);
   keys[VK_CAPITAL] = (BYTE)(((key < 0) ? 0x80 : 0) | (key & 1));
-  g_keyStateValid = true;
 }
 
 static WPARAM makeKeyMsg(UINT virtKey, WCHAR wc, bool noAltGr)
@@ -484,8 +488,24 @@ static LRESULT CALLBACK keyboardLLHook(int code, WPARAM wParam, LPARAM lParam)
 
     // keys we synthesize for our own local applications must reach them without
     // being reported to the server (or eaten while the keyboard is diverted)
-    if (g_ignoreInjected && injected) {
+    if (injected && info->dwExtraInfo == kKeyboardFollowCompensation) {
       return CallNextHookEx(g_keyboardLL, code, wParam, lParam);
+    }
+
+    if (!injected && info->vkCode < 256) {
+      std::lock_guard<std::mutex> lock(g_keyStateMutex);
+      // GetAsyncKeyState reflects compensated OS state, not held physical keys.
+      // Seed once, then update exclusively from physical low level events.
+      if (!g_physicalKeyStateValid) {
+        for (int vk = VK_BACK; vk < 256; ++vk) {
+          g_physicalKeyState[vk] = (GetAsyncKeyState(vk) & 0x8000) ? 0x80 : 0;
+        }
+        g_physicalKeyStateValid = true;
+      }
+      g_physicalKeyState[info->vkCode] = (info->flags & LLKHF_UP) ? 0 : 0x80;
+      g_physicalKeyState[VK_SHIFT] = g_physicalKeyState[VK_LSHIFT] | g_physicalKeyState[VK_RSHIFT];
+      g_physicalKeyState[VK_CONTROL] = g_physicalKeyState[VK_LCONTROL] | g_physicalKeyState[VK_RCONTROL];
+      g_physicalKeyState[VK_MENU] = g_physicalKeyState[VK_LMENU] | g_physicalKeyState[VK_RMENU];
     }
 
     WPARAM wParam = info->vkCode;
@@ -737,7 +757,9 @@ int MSWindowsHook::uninstall()
 
   std::lock_guard<std::mutex> lock(g_keyStateMutex);
   std::memset(g_keyState, 0, sizeof(g_keyState));
-  g_keyStateValid = false;
+  std::memset(g_physicalKeyState, 0, sizeof(g_physicalKeyState));
+  g_physicalKeyStateValid = false;
+  g_keyboardDivert = false;
 
   return 1;
 }

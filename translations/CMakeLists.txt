@@ -25,8 +25,18 @@ qt_create_translation(TRS ${CMAKE_SOURCE_DIR}/src ${CMAKE_PROJECT_NAME}_en.ts OP
 # Other languages contain the full set of strings.
 qt_create_translation(TRS ${CMAKE_SOURCE_DIR}/src ${${CMAKE_PROJECT_NAME}_TRS} OPTIONS ${TR_OPTIONS})
 
+# Qt's legacy translation helper only depends on the lupdate stamp. Also
+# release edited translations when no C++ or UI source has changed.
+foreach(QM_FILE IN LISTS TRS)
+  get_filename_component(TR_NAME "${QM_FILE}" NAME_WE)
+  add_custom_command(OUTPUT "${QM_FILE}" APPEND
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${TR_NAME}.ts"
+  )
+endforeach()
+
 #ensure that the targets are built always
 add_custom_target(app_translations ALL DEPENDS ${TRS})
+set(DESKFLOW_QM_FILES ${TRS} PARENT_SCOPE)
 
 if (NOT BUILD_OSX_BUNDLE)
   # install our translations

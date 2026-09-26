@@ -1,5 +1,8 @@
 <RCC>
     <qresource prefix="/">
+        <file alias="deskflow.ico">deskflow.ico</file>
+    </qresource>
+    <qresource prefix="/">
         <file>icons/deskflow-dark/actions/16/configure.svg</file>
         <file>icons/deskflow-dark/actions/16/edit-copy.svg</file>
         <file>icons/deskflow-dark/actions/16/document-edit.svg</file>

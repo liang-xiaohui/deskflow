@@ -339,13 +339,13 @@ Do you want to connect to the server?
     <message>
         <source>Use this computer&apos;s keyboard and mouse
 (make this computer the server)</source>
-        <translation>Использовать мышь и клавиатуру этого компьютера
+        <translation type="vanished">Использовать мышь и клавиатуру этого компьютера
 (сделать этот компьютер сервером)</translation>
     </message>
     <message>
         <source>Use another computer’s mouse and keyboard
 (make this computer the client)</source>
-        <translation>Использовать мышь и клавиатуру другого компьютера
+        <translation type="vanished">Использовать мышь и клавиатуру другого компьютера
 (сделать этот компьютер клиентом)</translation>
     </message>
     <message>
@@ -583,6 +583,55 @@ Additionally, check you are able to %1 the server config file: %2</source>
     </message>
     <message>
         <source>&lt;p&gt;Keyboard layout support requires matching layouts on all computers. The following layouts from the other computer are not installed on this computer:&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Please install them to enable support for these layouts.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Share this computer&apos;s input
+(make this computer the server)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Receive input from another computer
+(make this computer the client)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sharing mode:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Choose how the shared keyboard and mouse control other computers.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Extended screen mode</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Mouse follow mode</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Service version mismatch</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1
+Keyboard → %2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The installed Deskflow service belongs to a different build. Sharing was not started.
+
+Use this version to stop the old service&apos;s core and run the core bundled with this GUI. This saves desktop mode in Settings. To run as a background service, install the matching service.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Use this version</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Could not switch to the bundled core. Check that settings are writable and the core exists, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1094,6 +1143,38 @@ Enabling this setting will disable the server config GUI.</source>
         <source>Enable lock to computer at startup</source>
         <translation>Включать привязку к компьютеру при запуске</translation>
     </message>
+    <message>
+        <source>Input sharing</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Input sharing mode</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Extended screen mode</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Mouse follow mode</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Each computer uses its own mouse. The shared keyboard goes to the computer whose mouse moved last. Screen positions, edge switching and hotkeys are not used. Clipboard sharing remains available. Both computers need a version that supports this mode. Save to apply and restart sharing.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Use one keyboard and mouse. Move the pointer across a screen edge to control another computer. Arrange the computers below to match your displays.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Keyboard follow mode is currently available on Windows only.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Add the computers that can receive the keyboard. Their positions in this grid do not affect keyboard follow mode.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>
@@ -1389,6 +1470,14 @@ Enabling this setting will disable the server config GUI.</source>
     <message>
         <source>Encryption Disabled</source>
         <translation>Шифрование отключено</translation>
+    </message>
+    <message>
+        <source>Keyboard → %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Keyboard follows the last mouse moved. Each computer keeps its own mouse.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

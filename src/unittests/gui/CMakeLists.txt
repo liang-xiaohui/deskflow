@@ -5,6 +5,14 @@ add_subdirectory(config)
 add_subdirectory(core)
 
 create_test(
+  NAME InputModeTests
+  DEPENDS gui
+  SOURCE InputModeTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_sources(InputModeTests PRIVATE ../../apps/res/deskflow.qrc)
+
+create_test(
   NAME LoggerTests
   DEPENDS gui
   SOURCE LoggerTests.cpp

@@ -120,6 +120,10 @@ public:
   void setOptions(const OptionsList &options) override;
   void setSequenceNumber(uint32_t) override;
   void setKeyboardFollowDivert(bool divert) override;
+  bool supportsKeyboardFollow() const override
+  {
+    return !m_isPrimary || m_useHooks;
+  }
   bool getLocalCursorPos(int32_t &x, int32_t &y) const override;
   bool isPrimary() const override;
   std::string getSecureInputApp() const override;
@@ -131,7 +135,7 @@ protected:
   IKeyState *getKeyState() const override;
 
   // simulate a local key to the system directly
-  void fakeLocalKey(KeyButton button, bool press) const;
+  void fakeLocalKey(KeyButton button, bool press, ULONG_PTR extraInfo = 0) const;
 
 private:
   // initialization and shutdown operations

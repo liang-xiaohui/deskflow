@@ -40,6 +40,12 @@ StatusBar::StatusBar(QWidget *parent)
   m_lblStatus->setText(tr("%1 is not running").arg(kAppName));
   insertPermanentWidget(2, m_lblStatus, 1);
 
+  m_lblKeyboardTarget = new QLabel(this);
+  m_lblKeyboardTarget->setObjectName(QStringLiteral("lblKeyboardTarget"));
+  m_lblKeyboardTarget->setTextFormat(Qt::PlainText);
+  insertPermanentWidget(3, m_lblKeyboardTarget);
+  m_lblKeyboardTarget->hide();
+
   m_btnUpdate->setVisible(false);
   m_btnUpdate->setFlat(true);
   m_btnUpdate->setLayoutDirection(Qt::RightToLeft);
@@ -122,6 +128,11 @@ void StatusBar::setStatus(ConnectionState connectionState, ProcessState processS
   }
 }
 // clang-format on
+QString StatusBar::statusText() const
+{
+  return m_lblStatus->text();
+}
+
 void StatusBar::setServerClients(const QStringList &clients)
 {
   if (clients.isEmpty()) {
@@ -141,6 +152,14 @@ void StatusBar::setServerClients(const QStringList &clients)
 
   const auto toolTipString = clientCount == 1 ? "" : tr("Clients:\n %1").arg(clients.join(newLine));
   m_lblStatus->setToolTip(toolTipString);
+}
+
+void StatusBar::setKeyboardTarget(const QString &target)
+{
+  m_keyboardTarget = target;
+  m_lblKeyboardTarget->setVisible(!target.isEmpty());
+  m_lblKeyboardTarget->setText(tr("Keyboard → %1").arg(target));
+  m_lblKeyboardTarget->setToolTip(tr("Keyboard follows the last mouse moved. Each computer keeps its own mouse."));
 }
 
 void StatusBar::setSecurityIconVisible(bool visible)
@@ -178,6 +197,7 @@ void StatusBar::changeEvent(QEvent *e)
 
 void StatusBar::updateText()
 {
+  setKeyboardTarget(m_keyboardTarget);
   m_btnFingerprint->setToolTip(tr("View local fingerprint"));
   m_btnUpdate->setText(tr("Update available"));
   setSecurityLevel(m_securityLevel);

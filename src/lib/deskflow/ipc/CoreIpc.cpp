@@ -16,7 +16,12 @@ void ipcSendToClient(const QString &command, const QString &args)
   // and QLocalSocket can only be written to from its owning thread.
   auto &server = deskflow::core::ipc::CoreIpcServer::instance();
   QMetaObject::invokeMethod(
-      &server, [command, args] { deskflow::core::ipc::CoreIpcServer::instance().broadcastCommand(command, args); },
+      &server,
+      [command, args] {
+        const bool retain =
+            command == "keyboardTarget" || command == "connectionState" || command == "connectedClients";
+        deskflow::core::ipc::CoreIpcServer::instance().broadcastCommand(command, args, retain);
+      },
       Qt::QueuedConnection
   );
 }

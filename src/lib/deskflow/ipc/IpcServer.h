@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <QMap>
 #include <QObject>
 #include <QSet>
 
@@ -23,7 +24,7 @@ public:
   ~IpcServer() override;
 
   void listen();
-  void broadcastCommand(const QString &command, const QString &args = "");
+  void broadcastCommand(const QString &command, const QString &args = "", bool retain = false);
 
 Q_SIGNALS:
   void logLevelChanged(const QString &logLevel);
@@ -53,6 +54,7 @@ private:
   QSet<QLocalSocket *> m_clients;
   QString m_serverName;
   QStringList m_pendingMessages;
+  QMap<QString, QString> m_retainedMessages;
   QByteArray m_typeName;
 };
 

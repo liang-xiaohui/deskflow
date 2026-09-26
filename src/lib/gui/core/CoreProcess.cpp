@@ -109,6 +109,21 @@ CoreProcess::CoreProcess(const ServerConfig &serverConfig)
   }
 
   connect(m_daemonIpcClient, &ipc::DaemonIpcClient::connected, this, &CoreProcess::daemonIpcClientConnected);
+  connect(m_daemonIpcClient, &ipc::DaemonIpcClient::connected, this, [this] { m_daemonVersionMismatch = false; });
+  connect(m_daemonIpcClient, &ipc::DaemonIpcClient::versionMismatch, this, [this] {
+    m_daemonVersionMismatch = true;
+    if (m_processState == ProcessState::Starting) {
+      setConnectionState(ConnectionState::Disconnected);
+      setProcessState(ProcessState::Stopped);
+      Q_EMIT error(Error::ServiceVersionMismatch);
+    }
+  });
+  connect(m_daemonIpcClient, &ipc::DaemonIpcClient::connectionFailed, this, [this] {
+    if (m_processState == ProcessState::Starting) {
+      setConnectionState(ConnectionState::Disconnected);
+      setProcessState(ProcessState::Stopped);
+    }
+  });
   connect(
       m_daemonIpcClient, &ipc::DaemonIpcClient::connectionFailed, this, &CoreProcess::daemonIpcClientConnectionFailed
   );
@@ -252,16 +267,28 @@ void CoreProcess::startProcessFromDaemon()
   const auto configFile = Settings::settingsFile();
   qInfo("sending start to daemon (config file: %s)", qPrintable(configFile));
 
-  auto sendStart = [this, configFile] {
+  const auto generation = m_startGeneration;
+  auto sendStart = [this, configFile, generation] {
+    // A pending connected callback must not start a cancelled request.
+    if (m_processState != ProcessState::Starting || generation != m_startGeneration) {
+      return;
+    }
     m_daemonIpcClient->sendConfigFile(configFile);
     m_daemonIpcClient->sendStartProcess();
     setProcessState(ProcessState::Started);
   };
 
+  if (m_daemonVersionMismatch) {
+    setConnectionState(ConnectionState::Disconnected);
+    setProcessState(ProcessState::Stopped);
+    Q_EMIT error(Error::ServiceVersionMismatch);
+    return;
+  }
+
   if (m_daemonIpcClient->isConnected()) {
     sendStart();
   } else {
-    connect(
+    m_daemonStartConnection = connect(
         m_daemonIpcClient, &ipc::DaemonIpcClient::connected, this, sendStart,
         static_cast<Qt::ConnectionType>(Qt::SingleShotConnection | Qt::QueuedConnection)
     );
@@ -415,7 +442,7 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
     );
   }
 
-  QStringList args = {coreMode};
+  QStringList args = {coreMode, "--settings", Settings::settingsFile()};
 
   if (m_mode == Settings::CoreMode::Server) {
     const auto [hasNeededPermissions, configFilename] = persistServerConfig();
@@ -444,7 +471,8 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
   }
 
   // Wired before the start calls so it catches Started from both sync (desktop) and async (service) paths.
-  connect(
+  disconnect(m_coreStartedConnection);
+  m_coreStartedConnection = connect(
       this, &CoreProcess::processStateChanged, this,
       [this](ProcessState state) {
         if (state != ProcessState::Started) {
@@ -452,8 +480,9 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
         }
 
         // Delay briefly to give the core process time to start its IPC server.
-        QTimer::singleShot(kRetryDelay, this, [this] {
-          if (m_processState != ProcessState::Started) {
+        const auto generation = m_startGeneration;
+        QTimer::singleShot(kRetryDelay, this, [this, generation] {
+          if (m_processState != ProcessState::Started || generation != m_startGeneration) {
             return;
           }
 
@@ -513,8 +542,8 @@ void CoreProcess::stop(std::optional<ProcessMode> processModeOption)
     m_coreIpcClient = nullptr;
   }
 
-  if (m_processState == ProcessState::Starting) {
-    qDebug("core process is starting, cancelling");
+  if (m_processState == ProcessState::Starting || m_processState == ProcessState::RetryPending) {
+    qDebug("core process start is pending, cancelling");
     setProcessState(ProcessState::Stopped);
   } else if (m_processState != ProcessState::Stopped) {
     setProcessState(ProcessState::Stopping);
@@ -621,6 +650,15 @@ void CoreProcess::setProcessState(ProcessState state)
       qPrintable(processStateToString(m_processState)), qPrintable(processStateToString(state))
   );
   m_processState = state;
+  ++m_startGeneration;
+  if (state == ProcessState::Stopped || state == ProcessState::Stopping) {
+    disconnect(m_coreStartedConnection);
+    disconnect(m_daemonStartConnection);
+  }
+  if (state == ProcessState::Stopped || state == ProcessState::Stopping || state == ProcessState::Starting) {
+    m_keyboardTarget.clear();
+    Q_EMIT keyboardTargetChanged(m_keyboardTarget);
+  }
   Q_EMIT processStateChanged(state);
 }
 
@@ -638,6 +676,9 @@ void CoreProcess::onCoreIpcMessageReceived(const QString &command, const QString
   } else if (command == "connectedClients") {
     const auto clients = args.isEmpty() ? QStringList() : args.split(",");
     Q_EMIT connectedClientsChanged(clients);
+  } else if (command == "keyboardTarget") {
+    m_keyboardTarget = args;
+    Q_EMIT keyboardTargetChanged(args);
   } else if (command == "secureSocket") {
     Q_EMIT secureSocket(true);
     if (args != m_secureSocketVersion) {
@@ -728,6 +769,30 @@ void CoreProcess::clearSettings()
 void CoreProcess::retryDaemon()
 {
   m_daemonIpcClient->connectToServer();
+}
+
+bool CoreProcess::useBundledCore()
+{
+  if (m_processState != ProcessState::Stopped || !m_daemonVersionMismatch || !m_daemonIpcClient->isConnected() ||
+      !Settings::isWritable() || !QFile::exists(m_appPath)) {
+    return false;
+  }
+
+  // Stop through the daemon so its watchdog does not relaunch the old core.
+  // The stop command remains available when the version handshake mismatches.
+  m_daemonIpcClient->sendStopProcess();
+  Settings::setValue(Settings::Core::ProcessMode, ProcessMode::Desktop);
+  Settings::save();
+  m_lastProcessMode = ProcessMode::Desktop;
+  setProcessState(ProcessState::RetryPending);
+  const auto generation = m_startGeneration;
+  // An error handler can run inside start() while its mutex is held.
+  QTimer::singleShot(0, this, [this, generation] {
+    if (m_processState == ProcessState::RetryPending && generation == m_startGeneration) {
+      start(ProcessMode::Desktop);
+    }
+  });
+  return true;
 }
 
 } // namespace deskflow::gui
