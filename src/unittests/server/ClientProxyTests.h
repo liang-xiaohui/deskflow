@@ -22,6 +22,10 @@ private Q_SLOTS:
   void keyRepeat();
   void keyUp_data();
   void keyUp();
+  void keyboardFollow_data();
+  void keyboardFollow();
+  void keyboardFollowRequest_data();
+  void keyboardFollowRequest();
 
 private:
   Log m_log;

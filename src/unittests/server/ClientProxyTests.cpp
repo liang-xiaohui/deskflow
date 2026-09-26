@@ -7,6 +7,7 @@
 #include "ClientProxyTests.h"
 
 #include "../deskflow/MockEventQueue.h"
+#include "base/Event.h"
 #include "deskflow/AppUtil.h"
 #include "io/IStream.h"
 #include "server/ClientProxy1_0.h"
@@ -14,7 +15,10 @@
 #include "server/ClientProxy1_6.h"
 #include "server/ClientProxy1_7.h"
 #include "server/ClientProxy1_8.h"
+#include "server/ClientProxy1_9.h"
 
+#include <algorithm>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
@@ -53,6 +57,12 @@ public:
     return bytes;
   }
 
+  //! Queue bytes as if the peer had sent them
+  void feed(const QByteArray &bytes)
+  {
+    m_incoming.append(bytes);
+  }
+
   void write(const void *buffer, uint32_t n) override
   {
     m_buffer.append(static_cast<const char *>(buffer), n);
@@ -62,9 +72,15 @@ public:
   {
   }
 
-  uint32_t read(void *, uint32_t) override
+  uint32_t read(void *buffer, uint32_t n) override
   {
-    return 0;
+    const auto available = static_cast<uint32_t>(m_incoming.size());
+    const uint32_t count = std::min(n, available);
+    if (count > 0) {
+      std::memcpy(buffer, m_incoming.constData(), count);
+      m_incoming.remove(0, static_cast<int>(count));
+    }
+    return count;
   }
 
   void flush() override
@@ -96,6 +112,7 @@ public:
 
 private:
   QByteArray m_buffer;
+  QByteArray m_incoming;
 };
 
 std::unique_ptr<ClientProxy> makeProxy(int minor, deskflow::IStream *stream, IEventQueue *events)
@@ -120,11 +137,32 @@ std::unique_ptr<ClientProxy> makeProxy(int minor, deskflow::IStream *stream, IEv
   case 8:
     proxy = std::make_unique<ClientProxy1_8>("client", stream, server, events);
     break;
+  case 9:
+    proxy = std::make_unique<ClientProxy1_9>("client", stream, server, events);
+    break;
   default:
     break;
   }
   return proxy;
 }
+
+//! An event queue that remembers which events were posted
+class RecordingEventQueue : public MockEventQueue
+{
+public:
+  void addEvent(Event &&event) override
+  {
+    m_types.push_back(event.getType());
+  }
+
+  size_t count(EventTypes type) const
+  {
+    return static_cast<size_t>(std::count(m_types.begin(), m_types.end(), type));
+  }
+
+private:
+  std::vector<EventTypes> m_types;
+};
 
 struct ProxyUnderTest
 {
@@ -136,6 +174,25 @@ struct ProxyUnderTest
   {
     // drop the query-info and layout-sync messages the constructors send
     stream->take();
+  }
+};
+
+//! Same as ProxyUnderTest but keeps the posted events around
+struct FollowProxyUnderTest
+{
+  RecordingEventQueue events;
+  CapturingStream *stream = new CapturingStream;
+  std::unique_ptr<ClientProxy> proxy = makeProxy(9, stream, &events);
+
+  FollowProxyUnderTest()
+  {
+    // drop the query-info and layout-sync messages the constructors send
+    stream->take();
+  }
+
+  ClientProxy1_9 *asFollowProxy() const
+  {
+    return static_cast<ClientProxy1_9 *>(proxy.get());
   }
 };
 
@@ -220,6 +277,59 @@ void ClientProxyTests::keyUp()
   ProxyUnderTest test(minor);
   test.proxy->keyUp(kKey, kMask, kButton);
   QCOMPARE(test.stream->take(), expected);
+}
+
+// Keyboard follow mode (protocol 1.9) tells a secondary whether it currently
+// holds the keyboard and whether the mode is on at all (that second byte is what
+// keeps its own cursor usable).  Clients older than 1.9 must never see it.
+void ClientProxyTests::keyboardFollow_data()
+{
+  QTest::addColumn<int>("minor");
+  QTest::addColumn<bool>("isTarget");
+  QTest::addColumn<bool>("followMode");
+  QTest::addColumn<QByteArray>("expected");
+
+  QTest::newRow("1.9 target") << 9 << true << true << "DKBF" + QByteArray::fromHex("0101");
+  QTest::newRow("1.9 released") << 9 << false << true << "DKBF" + QByteArray::fromHex("0001");
+  QTest::newRow("1.9 mode off") << 9 << true << false << "DKBF" + QByteArray::fromHex("0100");
+  QTest::newRow("1.8 unaffected") << 8 << true << true << QByteArray();
+  QTest::newRow("1.7 unaffected") << 7 << true << true << QByteArray();
+}
+
+void ClientProxyTests::keyboardFollow()
+{
+  QFETCH(int, minor);
+  QFETCH(bool, isTarget);
+  QFETCH(bool, followMode);
+  QFETCH(QByteArray, expected);
+
+  ProxyUnderTest test(minor);
+  test.proxy->keyboardFollow(isTarget, followMode);
+  QCOMPARE(test.stream->take(), expected);
+}
+
+// CKBF asks for the keyboard.  It has to reach the server as an event, and its
+// argument has to be consumed so the stream stays in sync with the client.
+void ClientProxyTests::keyboardFollowRequest_data()
+{
+  QTest::addColumn<QByteArray>("request");
+  QTest::addColumn<bool>("accepted");
+
+  QTest::newRow("request") << "CKBF" + QByteArray::fromHex("00000007") << true;
+  QTest::newRow("sequence zero") << "CKBF" + QByteArray::fromHex("00000000") << true;
+}
+
+void ClientProxyTests::keyboardFollowRequest()
+{
+  QFETCH(QByteArray, request);
+  QFETCH(bool, accepted);
+
+  FollowProxyUnderTest test;
+  test.stream->feed(request);
+
+  const bool result = test.asFollowProxy()->parseMessage(reinterpret_cast<const uint8_t *>(request.constData()));
+  QCOMPARE(result, accepted);
+  QCOMPARE(int(test.events.count(EventTypes::ServerKeyboardFollowRequested)), accepted ? 1 : 0);
 }
 
 QTEST_MAIN(ClientProxyTests)

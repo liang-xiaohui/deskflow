@@ -248,7 +248,7 @@ GUI 开关是后续待办（见 §8）。
 | 项 | 内容 |
 |---|---|
 | 目标 | 在 macOS 上实现 3 个虚函数 + 1 处 tap 回调改造 + 1 处 `leave()` 防呆 |
-| 允许改的文件 | `src/lib/platform/OSXScreen.h`、`src/lib/platform/OSXScreen.mm`（如果 `mapKeyButtonToVirtualKey` 不可见，才允许动 `OSXKeyState.h` 加一个 public 方法） |
+| 允许改的文件 | `src/lib/platform/OSXScreen.h`、`src/lib/platform/OSXScreen.mm`，**外加 `src/lib/platform/OSXKeyState.h` 的一行可见性改动**（已核实必须：`mapKeyButtonToVirtualKey` 是 `private static`，见 `OSXKeyState.h:126`） |
 | 不允许改 | `ProtocolTypes.*`、`Server.*`、`Client.*`、`ServerProxy*`、`ClientProxy*`、`IPlatformScreen.h`、`Settings.h`（共享层已完成） |
 | 完成定义 | ① 编译通过（Xcode/CMake，无新增警告）② 单机跑起来，日志出现 `keyboard follow mode` ③ 双机（Mac 服务端 + 任一客户端）按 §9.2 的用例 5/6 验证：光标不跳不隐藏；按住修饰键切换不粘键 |
 | 必须先读 | 本节全部 + §2（架构）+ §4（共享层改了什么） |
@@ -274,6 +274,8 @@ GUI 开关是后续待办（见 §8）。
 | 权限：primary 构造时要求 `AXIsProcessTrusted()`，`checkAXPermissions()` 每秒复查 | `OSXScreen.mm:131-137`、`1522-1532` | KFM 的吞键**不需要额外权限**（tap 本来就可拦截） |
 | 安全输入（密码框）：`IsSecureEventInputEnabled()` 为真时系统扣住键盘 | `OSXScreen.mm:1827-1892` | KFM 转发会静默失效，属已知限制（与原模式一致） |
 | tap 跑在独立线程 + 独立 `CFRunLoop` | `OSXScreen.h:301-304` | ⚠️ divert 标志**跨线程**：服务端线程写、tap 线程读 → 必须 `std::atomic<bool>` |
+| `KeyState::fakeKeyUp(KeyButton)` / `fakeKeyDown(...)` **不能**用来注入补偿键 | `KeyState.cpp:899-914`（`fakeKeyUp` 要求 `m_serverKeys[button] != 0`，即只对"服务端转发下来的键"有效）、`795-826`（`fakeKeyDown` 需要 KeyID 能映射到键盘布局） | ⚠️ 陷阱：这两个 public API 看起来正好合适，但对本机物理按住的键直接返回 false/静默返回。补偿键必须走 `CGEventCreateKeyboardEvent` + `CGEventPost` |
+| `mapKeyButtonToVirtualKey(b) = b - KeyButtonOffset`，`KeyButtonOffset` 保证 0 不被占用 | `OSXKeyState.cpp:1010-1013`、`1005-1009` | 映射本身是平凡的，但仍然**不要**复制粘贴到 `OSXScreen`（改可见性更安全） |
 
 ### 6.2 要实现的三个虚函数
 
@@ -369,7 +371,9 @@ void OSXScreen::setKeyboardFollowLocalCursor(bool keepVisible)
   }
 ```
 
-### 6.3 tap 回调改造（`OSXScreen.mm:1742-1746`）
+### 6.3 tap 回调改造（`OSXScreen::handleCGInputEvent`，`OSXScreen.mm:1681`；吞/放判断在 `1742-1746`）
+
+> 鼠标**不需要任何改动**：KFM 下服务端 `m_isOnScreen` 恒为 `true`，回调末尾本来就会 `return event`（放行）。`onMouseMove()` 仍会照常上报给服务端，而服务端 `onMouseMovePrimary` 的 KFM 分支会立刻返回（不碰几何、不触发越界），所以光标完全由本机系统驱动。
 
 把原来的
 ```cpp
@@ -460,7 +464,7 @@ if (screen->m_keyboardFollowFakeInput.load()) {
   ```cpp
   void OSXScreen::postLocalOnlyKey(KeyButton button, bool down)
   {
-    // mapKeyButtonToVirtualKey 若不可见，按 6.7 第 2 条处理
+    // 前置：按 §6.0 把 OSXKeyState::mapKeyButtonToVirtualKey 移到 public:
     CGKeyCode code = m_keyState->mapKeyButtonToVirtualKey(button);
     CGEventRef event = CGEventCreateKeyboardEvent(nullptr, code, down);
     if (event == nullptr) {
@@ -470,6 +474,7 @@ if (screen->m_keyboardFollowFakeInput.load()) {
     CFRelease(event);
   }
   ```
+  > 为什么不用看起来更顺手的 `m_keyState->fakeKeyDown/fakeKeyUp`：`fakeKeyUp` 依赖 `m_serverKeys[]`（只对服务端转发下来的键有效，`KeyState.cpp:902-905` 对本机物理键直接 `return false`），`fakeKeyDown` 需要 KeyID 能映射进键盘布局。结论：补偿键必须走裸 `CGEvent`。
 - 退路（仅当上面实测不成立时）：改用 `kCGEventSourceUserData` 标记 + 回调识别；最后退路是注入期间临时 `CGEventTapEnable(port, false)` 再恢复。
 
 > Windows 侧的等价实现是 `MSWindowsHook::setIgnoreInjected()`（同步过滤 `LLKHF_INJECTED`）。两端语义要一致：**补偿键只到本机、不上报、不被吞**。
@@ -485,7 +490,7 @@ if (screen->m_keyboardFollowFakeInput.load()) {
 ### 6.7 必须先在真机验证 / 可能推翻方案的点
 
 1. **`fakeInputBegin/End` 需要你新实现**（macOS 上是空 FIXME）：这是本次唯一"新框架行为"。实测要点两条：① 补偿键确实到达本机应用；② 远端收不到假 key up/down（对话日志里没有多出来的 `DKUP`）。实现细节见 6.5，标志必须原子、必须在 `switch` 前判断。
-2. **`mapKeyButtonToVirtualKey` 的可见性**：若不是 public，在 `OSXKeyState.h` 加一个 public 包装（这是唯一允许动 `OSXKeyState` 的情形）。
+2. **`mapKeyButtonToVirtualKey` 的可见性（已核实：必须改）**：`OSXKeyState.h:126` 把它声明在 `private:` 段（`static uint32_t mapKeyButtonToVirtualKey(KeyButton)`）。把它移到 `public:`（一行位置调整，不改实现）即可。**不要**改用 `KeyState::fakeKeyDown/fakeKeyUp` 绕过（原因见 6.1 最后两行：它们对本机物理键无效）。
 3. **客户端光标**：`enable()` 的 hide+warp 改动是否影响到**原模式**（KFM 关闭时行为必须完全不变）。务必在 `server/keyboardFollow=false` 下回归一次。
 4. **媒体键语义**：吞还是不吞，需与用户确认（建议吞）。
 5. **tap 健康度**：`kCGEventTapDisabledByUserInput` 时是否要把 divert 关掉（建议：一旦发现 tap 不再有效，就 `setKeyboardFollowDivert(false)` + 日志告警，宁可键盘回到本机也不要静默丢键）。
@@ -541,12 +546,13 @@ if (screen->m_keyboardFollowFakeInput.load()) {
 
 ## 8. 后续待办
 
-- [ ] **macOS 端**：按 §6 交接卡片执行（3 个虚函数 + tap 回调改造 + `leave()` 防呆 + `enable()` 光标条件化）。共享层（协议 / Server / Client / 接口）已完成，执行者**只改 `OSXScreen.h/.mm`**
+- [x] **Windows 端**：实现完成，**已真编译 + 真链接**（`deskflow-core.exe` / `deskflow.exe` / `deskflow-daemon.exe`），并有 KFM 协议单测（24 passed / 0 failed）。见 §9.1.1–9.1.2
+- [ ] **Windows 双机实测**：必须通过 GUI 或管理员终端启动（见 §9.1.3 的提权坑），按 §9.2 跑 10 条用例
+- [ ] **macOS 端**：按 §6 交接卡片执行（3 个虚函数 + tap 回调改造 + `leave()` 防呆 + `enable()` 光标条件化）。共享层（协议 / Server / Client / 接口）已完成，执行者**只改 `OSXScreen.h/.mm` 与 `OSXKeyState.h` 的一行可见性**
 - [ ] **Linux 端**：同上（可选）
 - [ ] **GUI 开关**：`src/lib/gui/dialogs/ServerConfigDialog.{h,cpp,ui}` 加复选框（参照 `Win32KeepForeground`），并在 `ServerConfigDialog::init_from_config/onFormChange` 里读写
-- [ ] **单元测试**：
-  - `src/unittests/server/ClientProxyTests.cpp` 加 `CKBF`/`DKBF` 的逐字节用例（仿 `keyDown_data`）
-  - `src/unittests/client/ServerProxyTests.cpp` 加 `CKBF` 发送 + `DKBF` 解析用例
+- [x] **单元测试（server 侧）**：`src/unittests/server/ClientProxyTests.cpp` 已加 `CKBF`/`DKBF` 逐字节用例 + 事件断言
+- [ ] **单元测试（client 侧）**：`src/unittests/client/ServerProxyTests.cpp` 加 `CKBF` 发送 + `DKBF` 解析用例；另需覆盖 `ClientProxyUnknown::initProxy` 的 1.9 版本分发
 - [ ] **状态可视化**：托盘/日志提示"键盘当前在哪台"（现在只有 INFO 日志）
 - [ ] **多客户端仲裁**：若将来超过 2 台，把"最后请求者获胜"换成带序号的 Lamport 时钟（参考 `kfm.py` 的实现思路）
 - [ ] **上游化评估**：这是一个与几何模型正交的模式，理论上可以作为可选特性提交上游；但需要先说服维护者接受"键盘目标 ≠ active screen"这个第二状态
@@ -565,31 +571,110 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64 \
       -DBUILD_INSTALLER=OFF
 cmake --build build --config Release --target deskflow-core deskflow
 ```
+> 本机（Win 开发机）已用 NMake 生成器跑通同一条路：`python deskflow-tools/build_windows.py --openssl-root <prefix> --build-dir build-real deskflow-core Deskflow deskflow-daemon`，见 §9.1.1–9.1.3。
 
 Windows 上若没有 OpenSSL，推荐 `vcpkg install openssl:x64-windows`（或 Qt Maintenance Tool 里的 OpenSSL Toolkit），然后给 CMake 加 `-DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake`。
 
-#### 9.1.1 本机（开发用的 Win 机）已经踩过的三个坑与现成解法
+#### 9.1.1 本机（开发用的 Win 机）踩到的坑与现成解法
 
-> 这三条与环境强相关，换机器可跳过；但 2026-09 在这台机器上确实都撞到了。
+> 这几条与环境强相关，换机器可跳过；但 2026-09 在这台机器上确实都撞到了，且**都已解决**（不是"建议"，是已跑通的路径）。
+>
+> 本节提到的 `deskflow-tools/*.py` 与 OpenSSL 源码/产物都在仓库外：`C:\Users\liang\WorkBuddy\2026-09-26-10-24-22\deskflow-tools\`（脚本）与 `C:\Users\liang\kfm-build\`（1GB 级构建 scratch）。它们是本机的构建辅助，不随仓库分发。
 
 | 坑 | 现象 | 解法 |
 |---|---|---|
 | `vcvars64.bat` 坏 | cmd 解析报错"此时不应有 \Windows" | 手拼 `INCLUDE`/`LIB`/`PATH`（MSVC 14.44.35207 + Windows SDK 10.0.26100.0）。已封装：`deskflow-tools/build_windows.py` |
-| vcpkg 缺 `scripts/vcpkgTools.xml` | 每次 install 都重新"获取工具"，且解压子进程必报 `CreateFileW stdin failed with 231 (All pipe instances are busy.)` —— bash 与 PowerShell/ConPTY 下都一样，`7zr.exe` 手工运行却正常 | **放弃 vcpkg**，改用下面两条 |
-| 本机无 OpenSSL 3、也没有原生 Windows Perl | `find_package(OpenSSL 3.0 REQUIRED)` 直接让 configure 失败 | ① 只想验证编译：用 `deskflow-tools/stub-openssl/cmake/FindOpenSSL.cmake`（`-DCMAKE_MODULE_PATH=`）让 configure 通过，静态库照样全量编译；② 想要可运行产物：装真 OpenSSL（Qt Maintenance Tool 的 OpenSSL Toolkit / 预编译包 / 在 vcpkg 正常的机器上 `vcpkg install openssl:x64-windows`） |
+| vcpkg 缺 `scripts/vcpkgTools.xml` | 每次 install 都重新"获取工具"，且解压子进程必报 `CreateFileW stdin failed with 231 (All pipe instances are busy.)` —— bash 与 PowerShell/ConPTY 下都一样，`7zr.exe` 手工运行却正常 | **放弃 vcpkg**，见下面两条 |
+| 本机无原生 Windows Perl | Git 自带 perl 是 cygwin 版，**OpenSSL 3.6 明确拒绝**它做 VC-WIN64A 配置（"doesn't produce Windows like paths"） | 用 **portable Strawberry Perl 5.42.3.1**（`gh release download` 官方发布，只解压不安装） |
+| 本机无 OpenSSL 3 | `find_package(OpenSSL 3.0 REQUIRED)` 让 configure 失败 | 两条路：① 只验证编译 → `deskflow-tools/stub-openssl/cmake/FindOpenSSL.cmake`；② 要可运行产物 → **从源码造 OpenSSL**（下面已跑通） |
 
-已经实测通过的编译验证方式（本机）：
+**① 源码造 OpenSSL 3.6.4（同 vcpkg 锁定版本，已跑通）**
 
 ```bash
-python deskflow-tools/build_windows.py --wipe                 # configure（用 stub OpenSSL）
-python deskflow-tools/build_windows.py app server client platform   # 全量编译改动涉及的静态库
-python deskflow-tools/check_tus.py                            # 单文件语法快检（不需要 OpenSSL）
+python C:/Users/liang/kfm-build/build_openssl.py configure   # VC-WIN64A no-asm no-tests
+python C:/Users/liang/kfm-build/build_openssl.py build       # nmake，约 1 小时（!），建议后台跑
+python C:/Users/liang/kfm-build/finish_openssl.py            # 等编译收敛 → install_dev → 补 applink.c
+# 产物：C:/Users/liang/kfm-build/openssl-out/{include,lib,bin}
 ```
-> 注意：Git for Windows 自带的 perl 是 cygwin 版，**OpenSSL 3.6 明确拒绝**用它做 VC-WIN64A 构建（"doesn't produce Windows like paths"），所以想在这台机器上从源码造 OpenSSL 必须先弄一个原生 Windows Perl（Strawberry）。
+> 两个细节：`nmake` 全量编译耗时约 1 小时（crypto 部分 1600+ 个 obj），**必须放后台**，前台工具会在 15 分钟超时；`finish_openssl.py` 会把源码里的 `ms/applink.c` 复制到 `<prefix>/include/openssl/`，否则 CMake 内置 `FindOpenSSL` 不会创建 `OpenSSL::applink`（Deskflow 在 Windows 上链它）。
+
+**② 真构建（已跑通，含链接）**
+
+```bash
+# 只验证改动涉及的静态库（用 stub，快）
+python deskflow-tools/build_windows.py app server client platform
+
+# 完整构建（真 OpenSSL，会链接出可执行文件）
+python deskflow-tools/build_windows.py --openssl-root C:/Users/liang/kfm-build/openssl-out \
+       --build-dir build-real deskflow-core Deskflow deskflow-daemon
+
+# 单文件语法快检（不需要任何依赖，5 秒）
+python deskflow-tools/check_tus.py
+```
+
+实测产物（`build-real/bin/`）：
+
+| 文件 | 状态 |
+|---|---|
+| `deskflow-core.exe` | ✅ 链接成功；`--version` 输出 `v1.26.0.474 (f1c07776), protocol v1.9`（**证明协议号改动真的进了二进制**） |
+| `deskflow.exe`（GUI） | ✅ 链接成功 |
+| `deskflow-daemon.exe` | ✅ 链接成功 |
+| `ClientProxyTests.exe` | ✅ 见 9.1.2，24 passed / 0 failed |
+
+> GUI 目标链接后有一步 `windeployqt`，在本机会失败：`Unable to query qtpaths: Error running binary qtpaths: pipe:`（又是这台机器的管道老毛病）。它只是拷贝 Qt DLL，**失败发生在链接成功之后**，exe 已生成。运行时把 `C:/Qt/6.9.1/msvc2022_64/bin` 和 OpenSSL 的 `bin` 加进 `PATH` 即可，或手工跑一次 `windeployqt`。
+
+#### 9.1.2 单元测试（KFM 协议 1.9 的运行时验证）
+
+`src/unittests/server/ClientProxyTests.cpp` 里已经补上 7 条 KFM 用例：
+
+| 用例 | 断言 |
+|---|---|
+| `keyboardFollow(1.9 target)` | `DKBF` + `01 01` |
+| `keyboardFollow(1.9 released)` | `DKBF` + `00 01` |
+| `keyboardFollow(1.9 mode off)` | `DKBF` + `01 00` |
+| `keyboardFollow(1.8 unaffected)` / `(1.7 unaffected)` | **stream 为空** —— 旧客户端永远不会收到这个新消息（兼容性靠协商，不靠"忽略未知消息"） |
+| `keyboardFollowRequest(request)` / `(sequence zero)` | `CKBF<seq>` 被解析并且确实抛出了 `ServerKeyboardFollowRequested` 事件 |
+
+```bash
+python deskflow-tools/build_windows.py --openssl-root C:/Users/liang/kfm-build/openssl-out \
+       --build-dir build-real ClientProxyTests
+
+cd build-real/src/lib/server
+PATH="/c/Users/liang/kfm-build/openssl-out/bin:/c/Qt/6.9.1/msvc2022_64/bin:$PATH" \
+  ../../unittests/server/ClientProxyTests.exe -o C:/temp/qtest.txt,txt
+grep -E "FAIL|Totals" /c/temp/qtest.txt      # Totals: 24 passed, 0 failed
+```
+> **必须用 `-o <文件>,txt`**：这台机器上把 QTest 输出接到管道 / 交给 ctest（`--output-on-failure`）时，QTest 自己那部分输出会**整个丢掉**（只剩 Deskflow 的日志行），看起来像"测试崩了但没输出"。写文件就完整。
+
+还没覆盖的（留给后续）：`ClientProxyUnknown::initProxy` 的版本分发（决定 1.9 客户端会不会真的被 `ClientProxy1_9` 接手）、以及 macOS/Linux 的 `ServerProxy1_9` 解析。
+
+#### 9.1.3 想手工跑起来必须先解决"提权"这一关（**实测坑，容易误判成代码 bug**）
+
+直接以普通权限启动 `deskflow-core.exe` 会在启动早期就死掉：
+
+```
+INFO: settings file changed: ...
+FATAL: failed to create event for windows event loop
+```
+
+**原因不在 KFM**：`AppUtilWindows::eventLoop()`（`src/lib/deskflow/win32/AppUtilWindows.cpp:182`）要创建 `kCloseEventName = L"Global\\DeskflowClose"`（`common/Constants.h.in:37`），而 `Global\` 命名对象需要 **SeCreateGlobalPrivilege**（只有服务/管理员有）。实测：
+
+```
+CreateEventW(NULL, 1, 0, L"Global\\DeskflowClose") -> NULL, GetLastError=5 (ERROR_ACCESS_DENIED)
+CreateEventW(NULL, 1, 0, L"DeskflowCloseTest")     -> OK
+```
+
+三条佐证它与我改动无关：① `server/keyboardFollow` 开与关**报错完全一样**；② `git diff master...feat/keyboard-follow` 里没有 `AppUtilWindows.*`（最后改动者是上游 KoljaFrahm，2026-08-29）；③ 本机 Deskflow 的 daemon 正是以**服务**身份运行并拉起 core 的（`[daemon] elevate=true`）。
+
+所以：**要手工测试就用 GUI（它会经 daemon 提权拉起 core），或在管理员终端里直接跑 core**。
 
 ### 9.2 双机手工用例（Windows，必测）
 
 准备：A = 服务端（插键盘），B = 客户端。两端都装同一份编译产物；`server/keyboardFollow=true` 写在 A 的配置里。
+
+> ⚠️ **A 端必须通过 GUI 启动（走 daemon 提权），或在管理员终端里跑 core**，否则 core 会在启动早期 `FATAL: failed to create event for windows event loop` 直接退出——这是上游的提权设计，不是 KFM 的问题（详见 §9.1.3）。
+> 配置方式：GUI 里改 `server/keyboardFollow`（若已加复选框，见 §8），或直接改 `%USERPROFILE%/AppData/Roaming/Deskflow/Deskflow.conf` 的 `[server]` 段；core 也支持 `-s <配置文件>` 指向别的配置（改端口避免和日常实例抢 24800）。
+> 只调试一端时要注意：core 的单实例检查会跳过，但 `Global\DeskflowClose` 仍然由已在运行的 daemon 持有。
 
 | # | 操作 | 期望 |
 |---|---|---|
@@ -625,4 +710,6 @@ core 日志按级别过滤（`--log-level` 或 GUI 日志窗口）：
 协议：1.9 / CKBF%4i（C→S 抢键盘）/ DKBF%1i%1i（S→C 是否持有 + KFM 是否开启）
 开关：server/keyboardFollow（默认 false，需重启）
 平台：只需实现 setKeyboardFollowDivert / getLocalCursorPos / setKeyboardFollowLocalCursor 三个虚函数
+验证：build_windows.py --openssl-root <prefix> deskflow-core Deskflow deskflow-daemon ClientProxyTests
+      单测 24 passed / 0 failed（-o <文件>,txt 否则输出会丢）；运行 core 必须提权（Global\DeskflowClose）
 ```
