@@ -303,10 +303,15 @@ private:
   // process options from configuration
   void processOptions();
 
+  // keyboard follow mode helpers
+  BaseClientProxy *keyboardSink() const;
+  void setKeyboardTarget(BaseClientProxy *target);
+
   // event handlers
   void handleShapeChanged(BaseClientProxy *client);
   void handleClipboardGrabbed(const Event &event, BaseClientProxy *client);
   void handleClipboardChanged(const Event &event, BaseClientProxy *client);
+  void handleKeyboardFollowRequest(BaseClientProxy *client);
   void handleKeyDownEvent(const Event &event);
   void handleKeyUpEvent(const Event &event);
   void handleKeyRepeatEvent(const Event &event);
@@ -378,6 +383,12 @@ private:
 
   // the client with focus
   BaseClientProxy *m_active = nullptr;
+
+  // keyboard follow mode (server/keyboardFollow).  When enabled, cursor movement
+  // never switches screens and the keyboard is sent to m_keyboardTarget instead
+  // of m_active.  A null target means the keyboard stays on this computer.
+  bool m_keyboardFollow = false;
+  BaseClientProxy *m_keyboardTarget = nullptr;
 
   // current configuration
   ServerConfig *m_config = nullptr;

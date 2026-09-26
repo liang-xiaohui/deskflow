@@ -117,6 +117,7 @@ public:
     inline static const auto GridHeight = QStringLiteral("server/gridHeight");
     inline static const auto GridWidth = QStringLiteral("server/gridWidth");
     inline static const auto Heartbeat = QStringLiteral("server/heartbeat");
+    inline static const auto KeyboardFollow = QStringLiteral("server/keyboardFollow");
     inline static const auto Protocol = QStringLiteral("server/protocol");
     inline static const auto RelativeMouseMoves = QStringLiteral("server/relativeMouseMoves");
     inline static const auto SwitchDelay = QStringLiteral("server/switchDelay");
@@ -334,6 +335,7 @@ private:
     , Server::GridHeight
     , Server::GridWidth
     , Server::Heartbeat
+    , Server::KeyboardFollow
     , Server::Protocol
     , Server::RelativeMouseMoves
     , Server::SwitchDelay
@@ -364,6 +366,7 @@ private:
     , Server::EnableSwitchDelay
     , Server::EnableSwitchDoubleTap
     , Server::ExternalConfig
+    , Server::KeyboardFollow
     , Server::RelativeMouseMoves
     , Server::XdpClipboardRetried
   };

@@ -51,6 +51,14 @@ public:
   bool onGrabClipboard(ClipboardID);
   void onClipboardChanged(ClipboardID, const IClipboard *);
 
+  //! Ask the server for the keyboard
+  /*!
+  Sent when the physical mouse of this computer moves (keyboard follow mode).
+  Servers older than protocol 1.9 cannot be asked, so the base implementation
+  does nothing.
+  */
+  virtual void onLocalMouseActivity(uint32_t sequence);
+
   //@}
 
 protected:
@@ -65,6 +73,9 @@ protected:
   virtual ConnectionResult parseMessage(const uint8_t *code);
   void keyDown(uint16_t id, uint16_t mask, uint16_t button, const std::string &lang);
   void keyRepeat(uint16_t id, uint16_t mask, uint16_t count, uint16_t button, const std::string &lang);
+
+  //! Forward the keyboard follow state received from the server
+  void keyboardFollowChanged(bool isTarget);
 
   deskflow::IStream *getStream() const
   {

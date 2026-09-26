@@ -726,6 +726,18 @@ void ServerProxy::mouseWheel()
   m_client->mouseWheel(xDelta, yDelta);
 }
 
+void ServerProxy::onLocalMouseActivity(uint32_t sequence)
+{
+  // keyboard follow mode needs protocol 1.9; older servers can't be asked for
+  // the keyboard
+  LOG_VERBOSE("keyboard follow request (sequence=%u) not sent: server protocol < 1.9", sequence);
+}
+
+void ServerProxy::keyboardFollowChanged(bool isTarget)
+{
+  m_client->keyboardFollowChanged(isTarget);
+}
+
 void ServerProxy::screensaver()
 {
   // parse

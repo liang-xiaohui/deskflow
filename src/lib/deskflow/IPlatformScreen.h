@@ -122,6 +122,34 @@ public:
   */
   virtual void setOptions(const OptionsList &options) = 0;
 
+  //! Divert the keyboard to another computer
+  /*!
+  Used by keyboard follow mode (server/keyboardFollow).  When \p divert is true
+  the screen must keep the local keyboard away from the local applications so
+  the keys can be relayed, without touching the mouse at all: in keyboard follow
+  mode every computer keeps using its own mouse and its own cursor.
+  Platforms without an input hook cannot divert and may ignore this.
+  */
+  virtual void setKeyboardFollowDivert(bool divert)
+  {
+    // platforms without an input hook cannot divert the keyboard: keyboard
+    // follow mode then simply never takes the keyboard away from this computer
+    (void)divert;
+  }
+
+  //! Get the real cursor position of this computer
+  /*!
+  Unlike getCursorPos() this reports where this computer's own cursor is, even
+  when the cursor is not being driven by the server.  Keyboard follow mode uses
+  it to detect local user activity on a secondary screen.  Returns false if the
+  position is unavailable.
+  */
+  virtual bool getLocalCursorPos(int32_t &x, int32_t &y) const
+  {
+    getCursorPos(x, y);
+    return true;
+  }
+
   //! Set clipboard sequence number
   /*!
   Sets the sequence number to use in subsequent clipboard events.

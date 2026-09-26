@@ -146,6 +146,13 @@ enum class EventTypes : uint32_t
   */
   ServerKeyboardBroadcast,
 
+  /** This event is sent when a client asks for the keyboard because its own
+      physical mouse moved (keyboard follow mode). The target is the requesting
+      client proxy, so it is registered per client like the clipboard events.
+      The event data is a pointer to KeyboardFollowInfo.
+  */
+  ServerKeyboardFollowRequested,
+
   /** This event is sent to inform the server to lock the cursor to the active computer or to
       unlock it. The event data is a pointer to LockCursorToScreenInfo.
   */

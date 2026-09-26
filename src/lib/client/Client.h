@@ -132,6 +132,13 @@ public:
   */
   virtual void handshakeComplete();
 
+  //! Notify of keyboard follow state
+  /*!
+  Called when the server tells us whether this computer currently holds the
+  keyboard (keyboard follow mode, protocol 1.9 and later).
+  */
+  void keyboardFollowChanged(bool isTarget);
+
   //@}
   //! @name accessors
   //@{
@@ -199,11 +206,14 @@ private:
   void setupConnection();
   bool setupScreen(int16_t protocolMinor);
   void setupTimer();
+  void setupFollowTimer();
   void cleanup();
   void cleanupConnecting();
   void cleanupConnection();
   void cleanupScreen();
   void cleanupTimer();
+  void cleanupFollowTimer();
+  void handleFollowTimer();
   void cleanupStream();
   void handleConnected();
   void handleConnectionFailed(const Event &event);
@@ -245,4 +255,14 @@ private:
   size_t m_maximumClipboardReceiveSize = 0;
   size_t m_maximumClipboardSize = INT_MAX;
   size_t m_resolvedAddressesCount = 0;
+
+  // keyboard follow mode (protocol 1.9 and later)
+  EventQueueTimer *m_followTimer = nullptr;
+  bool m_keyboardFollowSupported = false;
+  bool m_isKeyboardFollowTarget = false;
+  bool m_hasFollowPosition = false;
+  int32_t m_followX = 0;
+  int32_t m_followY = 0;
+  int m_followCooldown = 0;
+  uint32_t m_followSequence = 0;
 };

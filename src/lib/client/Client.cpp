@@ -14,6 +14,7 @@
 #include "client/ServerProxy.h"
 #include "client/ServerProxy1_7.h"
 #include "client/ServerProxy1_8.h"
+#include "client/ServerProxy1_9.h"
 #include "common/NetworkProtocol.h"
 #include "common/Settings.h"
 #include "deskflow/Clipboard.h"
@@ -34,6 +35,17 @@
 
 #include <cstdlib>
 #include <cstring>
+
+namespace {
+
+// Keyboard follow mode: how often the local cursor is sampled, how far it has to
+// move to count as "the user grabbed the mouse", and how long we wait between
+// two requests so a fast mouse cannot flood the server.
+constexpr double kFollowPollInterval = 0.04;
+constexpr int32_t kFollowMoveThreshold = 4;
+constexpr int kFollowClaimCooldownTicks = 5;
+
+} // namespace
 
 //
 // Client
@@ -176,6 +188,7 @@ void Client::handshakeComplete()
   if (m_relativeMouseMoves && !m_hasRelativeRestorePosition) {
     saveRelativeRestorePosition();
   }
+  setupFollowTimer();
   sendEvent(EventTypes::ClientConnected);
 }
 
@@ -486,6 +499,10 @@ bool Client::setupScreen(int16_t protocolMinor)
   case 8:
     m_server = new ServerProxy1_8(this, m_stream, m_events);
     break;
+  case 9:
+    m_server = new ServerProxy1_9(this, m_stream, m_events);
+    m_keyboardFollowSupported = true;
+    break;
   default:
     break;
   }
@@ -512,6 +529,7 @@ void Client::cleanup()
 {
   m_connectOnResume = false;
   cleanupTimer();
+  cleanupFollowTimer();
   cleanupScreen();
   cleanupConnecting();
   cleanupConnection();
@@ -567,6 +585,83 @@ void Client::cleanupStream()
 {
   delete m_stream;
   m_stream = nullptr;
+}
+
+void Client::setupFollowTimer()
+{
+  if (!m_keyboardFollowSupported || m_followTimer != nullptr) {
+    return;
+  }
+
+  // In keyboard follow mode the server never moves our cursor, so any movement
+  // of the local cursor is the user's own mouse. Sampling it is all we need to
+  // notice that the user grabbed the mouse on this computer.
+  m_followTimer = m_events->newTimer(kFollowPollInterval, nullptr);
+  m_events->addHandler(EventTypes::Timer, m_followTimer, [this](const auto &) { handleFollowTimer(); });
+  m_hasFollowPosition = false;
+  m_followCooldown = 0;
+  LOG_VERBOSE("keyboard follow: watching the local cursor");
+}
+
+void Client::cleanupFollowTimer()
+{
+  if (m_followTimer != nullptr) {
+    m_events->removeHandler(EventTypes::Timer, m_followTimer);
+    m_events->deleteTimer(m_followTimer);
+    m_followTimer = nullptr;
+  }
+  m_isKeyboardFollowTarget = false;
+  m_hasFollowPosition = false;
+  m_followCooldown = 0;
+}
+
+void Client::handleFollowTimer()
+{
+  if (m_server == nullptr || m_isKeyboardFollowTarget) {
+    // we already hold the keyboard, no need to keep asking for it
+    return;
+  }
+
+  int32_t x = 0;
+  int32_t y = 0;
+  if (!m_screen->getPlatformScreen()->getLocalCursorPos(x, y)) {
+    return;
+  }
+
+  if (!m_hasFollowPosition) {
+    m_hasFollowPosition = true;
+    m_followX = x;
+    m_followY = y;
+    return;
+  }
+
+  if (std::abs(x - m_followX) + std::abs(y - m_followY) < kFollowMoveThreshold) {
+    return;
+  }
+  m_followX = x;
+  m_followY = y;
+
+  if (m_followCooldown > 0) {
+    --m_followCooldown;
+    return;
+  }
+  m_followCooldown = kFollowClaimCooldownTicks;
+
+  LOG_VERBOSE("keyboard follow: local mouse moved, asking for the keyboard");
+  m_server->onLocalMouseActivity(++m_followSequence);
+}
+
+void Client::keyboardFollowChanged(bool isTarget)
+{
+  LOG_VERBOSE("keyboard follow: %s", isTarget ? "the keyboard is here" : "the keyboard went away");
+  m_isKeyboardFollowTarget = isTarget;
+  m_followCooldown = 0;
+
+  if (!isTarget) {
+    // Release anything we may still be holding down, otherwise a key that was
+    // pressed while we had the keyboard would stay down forever.
+    m_screen->getPlatformScreen()->fakeAllKeysUp();
+  }
 }
 
 void Client::handleConnected()

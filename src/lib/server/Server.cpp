@@ -10,6 +10,7 @@
 
 #include "base/IEventQueue.h"
 #include "base/Log.h"
+#include "common/Settings.h"
 #include "deskflow/AppUtil.h"
 #include "deskflow/DeskflowException.h"
 #include "deskflow/IPlatformScreen.h"
@@ -54,6 +55,16 @@ Server::Server(ServerConfig &config, PrimaryClient *primaryClient, deskflow::Scr
   assert(m_screen != nullptr);
 
   std::string primaryName = getName(primaryClient);
+
+  // keyboard follow mode: the keyboard goes to whichever computer's mouse moved
+  // last, and screens are never switched by cursor movement.
+  m_keyboardFollow = Settings::value(Settings::Server::KeyboardFollow).toBool();
+  if (m_keyboardFollow) {
+    LOG_INFO(
+        "keyboard follow mode enabled: the keyboard targets the computer whose mouse moved last, "
+        "screens are never switched by cursor movement"
+    );
+  }
 
   // clear clipboards
   for (auto &clipboard : m_clipboards) {
@@ -399,6 +410,14 @@ void Server::switchScreen(BaseClientProxy *dst, int32_t x, int32_t y, bool forSc
 {
   assert(dst != nullptr);
 
+  if (m_keyboardFollow) {
+    // Keyboard follow mode never switches screens: switching warps and hides the
+    // cursor, and every computer must keep its own cursor.  Only the keyboard
+    // moves, see setKeyboardTarget().
+    LOG_VERBOSE("ignoring screen switch: keyboard follow mode is on");
+    return;
+  }
+
   int32_t dx;
   int32_t dy;
   int32_t dw;
@@ -513,6 +532,13 @@ void Server::switchScreen(BaseClientProxy *dst, int32_t x, int32_t y, bool forSc
 void Server::jumpToScreen(BaseClientProxy *newScreen)
 {
   assert(newScreen != nullptr);
+
+  if (m_keyboardFollow) {
+    // keyboard follow mode: screens are never switched, not even by hot keys.
+    // The keyboard follows the mouse instead.
+    LOG_VERBOSE("ignoring switch to \"%s\": keyboard follow mode is on", getName(newScreen).c_str());
+    return;
+  }
 
   // record the current cursor position on the active screen
   m_active->setJumpCursorPos(m_x, m_y);
@@ -1532,6 +1558,58 @@ void Server::onScreensaver(bool activated)
   }
 }
 
+BaseClientProxy *Server::keyboardSink() const
+{
+  if (m_keyboardFollow && m_keyboardTarget != nullptr) {
+    return m_keyboardTarget;
+  }
+  return m_active;
+}
+
+void Server::setKeyboardTarget(BaseClientProxy *target)
+{
+  if (target == m_keyboardTarget) {
+    return;
+  }
+
+  BaseClientProxy *oldTarget = m_keyboardTarget;
+  m_keyboardTarget = target;
+
+  // Only while a client holds the keyboard does the local keyboard have to be
+  // swallowed and relayed.  The mouse is never diverted: every computer keeps
+  // using its own mouse and its own cursor.
+  m_screen->getPlatformScreen()->setKeyboardFollowDivert(m_keyboardTarget != nullptr);
+
+  if (oldTarget != nullptr) {
+    if (auto *proxy = dynamic_cast<ClientProxy *>(oldTarget); proxy != nullptr) {
+      proxy->keyboardFollow(false);
+    }
+  }
+  if (m_keyboardTarget != nullptr) {
+    if (auto *proxy = dynamic_cast<ClientProxy *>(m_keyboardTarget); proxy != nullptr) {
+      proxy->keyboardFollow(true);
+    }
+  }
+
+  LOG_INFO(
+      "keyboard follow: the keyboard is now on \"%s\"",
+      getName(m_keyboardTarget != nullptr ? m_keyboardTarget : m_active).c_str()
+  );
+}
+
+void Server::handleKeyboardFollowRequest(BaseClientProxy *client)
+{
+  if (!m_keyboardFollow) {
+    LOG_VERBOSE("ignoring keyboard follow request from \"%s\": keyboard follow mode is off", getName(client).c_str());
+    return;
+  }
+  if (client == m_primaryClient) {
+    return;
+  }
+
+  setKeyboardTarget(client);
+}
+
 void Server::onKeyDown(KeyID id, KeyModifierMask mask, KeyButton button, const std::string &lang, const char *screens)
 {
   LOG_VERBOSE("onKeyDown id=%d mask=0x%04x button=0x%04x lang=%s", id, mask, button, lang.c_str());
@@ -1539,7 +1617,7 @@ void Server::onKeyDown(KeyID id, KeyModifierMask mask, KeyButton button, const s
 
   // relay
   if (!m_keyboardBroadcasting && IKeyState::KeyInfo::isDefault(screens)) {
-    m_active->keyDown(id, mask, button, lang);
+    keyboardSink()->keyDown(id, mask, button, lang);
   } else {
     if (!screens && m_keyboardBroadcasting) {
       screens = m_keyboardBroadcastingScreens.c_str();
@@ -1562,7 +1640,7 @@ void Server::onKeyUp(KeyID id, KeyModifierMask mask, KeyButton button, const cha
 
   // relay
   if (!m_keyboardBroadcasting && IKeyState::KeyInfo::isDefault(screens)) {
-    m_active->keyUp(id, mask, button);
+    keyboardSink()->keyUp(id, mask, button);
   } else {
     if (!screens && m_keyboardBroadcasting) {
       screens = m_keyboardBroadcastingScreens.c_str();
@@ -1587,7 +1665,7 @@ void Server::onKeyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyButto
   assert(m_active != nullptr);
 
   // relay
-  m_active->keyRepeat(id, mask, count, button, lang);
+  keyboardSink()->keyRepeat(id, mask, count, button, lang);
 }
 
 void Server::onMouseDown(ButtonID id)
@@ -1615,6 +1693,19 @@ bool Server::onMouseMovePrimary(int32_t x, int32_t y)
   // mouse move on primary (server's) screen
   if (m_active != m_primaryClient) {
     // stale event -- we're actually on a secondary screen
+    return false;
+  }
+
+  // keyboard follow mode: the cursor is never warped and screens are never
+  // switched by motion.  The local cursor moves on its own because the platform
+  // hook lets mouse events through; we only use this as the "our own mouse moved"
+  // signal to take the keyboard back from a client.
+  if (m_keyboardFollow) {
+    m_x = x;
+    m_y = y;
+    if (m_keyboardTarget != nullptr) {
+      setKeyboardTarget(nullptr);
+    }
     return false;
   }
 
@@ -1903,6 +1994,9 @@ bool Server::addClient(BaseClientProxy *client)
   m_events->addHandler(EventTypes::ClipboardChanged, client->getEventTarget(), [this, client](const auto &e) {
     handleClipboardChanged(e, client);
   });
+  m_events->addHandler(EventTypes::ServerKeyboardFollowRequested, client->getEventTarget(), [this, client](const auto &) {
+    handleKeyboardFollowRequest(client);
+  });
 
   // add to list
   m_clientSet.insert(client);
@@ -1933,6 +2027,15 @@ bool Server::removeClient(BaseClientProxy *client)
   m_events->removeHandler(ScreenShapeChanged, client->getEventTarget());
   m_events->removeHandler(ClipboardGrabbed, client->getEventTarget());
   m_events->removeHandler(ClipboardChanged, client->getEventTarget());
+  m_events->removeHandler(ServerKeyboardFollowRequested, client->getEventTarget());
+
+  // a client that held the keyboard can no longer be reached, take it back
+  // without notifying the client (it is going away anyway)
+  if (m_keyboardTarget == client) {
+    m_keyboardTarget = nullptr;
+    m_screen->getPlatformScreen()->setKeyboardFollowDivert(false);
+    LOG_INFO("keyboard follow: the keyboard went back to \"%s\"", getName(m_active).c_str());
+  }
 
   // remove from list
   m_clients.erase(getName(client));

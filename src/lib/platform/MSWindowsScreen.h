@@ -119,6 +119,8 @@ public:
   void resetOptions() override;
   void setOptions(const OptionsList &options) override;
   void setSequenceNumber(uint32_t) override;
+  void setKeyboardFollowDivert(bool divert) override;
+  bool getLocalCursorPos(int32_t &x, int32_t &y) const override;
   bool isPrimary() const override;
   std::string getSecureInputApp() const override;
 
@@ -252,6 +254,10 @@ private:
 
   // true if hooks are not to be installed (useful for debugging)
   bool m_useHooks;
+
+  // true if keyboard follow mode (server/keyboardFollow) is enabled: the mouse
+  // stays local and is never eaten, only the keyboard is relayed
+  bool m_keyboardFollow = false;
 
   // true if mouse has entered the screen
   bool m_isOnScreen;

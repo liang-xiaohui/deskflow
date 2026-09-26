@@ -39,7 +39,10 @@ enum EHookMode
 {
   kHOOK_DISABLE,
   kHOOK_WATCH_JUMP_ZONE,
-  kHOOK_RELAY_EVENTS
+  kHOOK_RELAY_EVENTS,
+  //! Keyboard follow mode: the mouse always stays local and is never eaten, the
+  //! keyboard is swallowed (and relayed) only while the keyboard is diverted.
+  kHOOK_KEYBOARD_FOLLOW
 };
 
 //! Loads and provides functions for the Windows hook
@@ -61,6 +64,12 @@ public:
   void setZone(int32_t x, int32_t y, int32_t w, int32_t h, int32_t jumpZoneSize);
 
   void setMode(EHookMode mode);
+
+  //! Swallow the local keyboard so it can be relayed (keyboard follow mode)
+  /*!
+  Only meaningful with \c kHOOK_KEYBOARD_FOLLOW; the mouse is never affected.
+  */
+  static void setKeyboardDivert(bool divert);
 
   //! Copy the hook's physical key state; false until it has observed an event.
   static bool getPhysicalKeyState(BYTE keys[256]);

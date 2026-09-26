@@ -45,7 +45,7 @@ static const int16_t kProtocolMajorVersion = 1;
  * @note When incrementing the minor version, the Deskflow application version should also increment
  * @since Protocol version 1.0
  */
-static const int16_t kProtocolMinorVersion = 8;
+static const int16_t kProtocolMinorVersion = 9;
 
 /**
  * @brief Default TCP port for Deskflow connections
@@ -488,6 +488,48 @@ extern const char *const kMsgCInfoAck;
  * @since Protocol version 1.3
  */
 extern const char *const kMsgCKeepAlive;
+
+/**
+ * @brief Keyboard follow request (claim the keyboard)
+ *
+ * **Message Code**: `"CKBF"`
+ * **Direction**: Secondary → Primary
+ * **Format**: `"CKBF%4i"`
+ * **Parameters**:
+ * - `$1`: Sequence (4 bytes) - Monotonically increasing counter owned by the
+ * sending secondary; the primary only uses it for ordering/diagnostics.
+ *
+ * Sent when the physical mouse attached to the secondary moves and the
+ * secondary does not currently hold the keyboard. Only sent by secondaries
+ * that negotiated protocol 1.9 or later.
+ *
+ * This message only has an effect when the primary has `server/keyboardFollow`
+ * enabled. The keyboard is never taken back implicitly: the primary releases it
+ * as soon as its own mouse moves (see `kMsgDKeyboardFollow`).
+ *
+ * @see kMsgDKeyboardFollow
+ * @since Protocol version 1.9
+ */
+extern const char *const kMsgCKeyboardFollow;
+
+/**
+ * @brief Keyboard follow state (informational)
+ *
+ * **Message Code**: `"DKBF"`
+ * **Direction**: Primary → Secondary
+ * **Format**: `"DKBF%1i"`
+ * **Parameters**:
+ * - `$1`: State (1 byte) - 1 if this secondary is the current keyboard target,
+ * 0 if it lost the keyboard.
+ *
+ * Lets the secondary know whether its keyboard-follow requests are currently
+ * honoured and lets it release any keys it may still be holding down when the
+ * keyboard is taken away. Only sent to secondaries that negotiated 1.9 or later.
+ *
+ * @see kMsgCKeyboardFollow
+ * @since Protocol version 1.9
+ */
+extern const char *const kMsgDKeyboardFollow;
 
 /** @} */ // end of protocol_commands group
 

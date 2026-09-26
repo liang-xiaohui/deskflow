@@ -26,6 +26,10 @@ static HHOOK g_keyboardLL = nullptr;
 static HHOOK g_mouseLL = nullptr;
 static bool g_screenSaver = false;
 static EHookMode g_mode = kHOOK_DISABLE;
+
+// keyboard follow mode: true while the keyboard has been handed to another
+// computer and the local keyboard therefore has to be swallowed
+static bool g_keyboardDivert = false;
 static uint32_t g_zoneSides = 0;
 static int32_t g_zoneSize = 0;
 static int32_t g_xScreen = 0;
@@ -145,6 +149,18 @@ void MSWindowsHook::setMode(EHookMode mode)
     return;
   }
   g_mode = mode;
+}
+
+void MSWindowsHook::setKeyboardDivert(bool divert)
+{
+  g_keyboardDivert = divert;
+}
+
+// true when local key events must be eaten so they can be relayed.  In keyboard
+// follow mode only the keyboard is diverted; the mouse always stays local.
+static bool isRelayingEvents()
+{
+  return g_mode == kHOOK_RELAY_EVENTS || (g_mode == kHOOK_KEYBOARD_FOLLOW && g_keyboardDivert);
 }
 
 bool MSWindowsHook::getPhysicalKeyState(BYTE keys[256])
@@ -301,7 +317,7 @@ static bool keyboardHookHandler(WPARAM wParam, LPARAM lParam)
   // local app will.  if on a client screen then grab keys as usual;
   // if the client is a windows system it'll synthesize the expected
   // character.  if not then it'll probably just do nothing.
-  if (g_mode != kHOOK_RELAY_EVENTS) {
+  if (!isRelayingEvents()) {
     // we don't use virtual keys because we don't know what the
     // state of the numlock key is.  we'll hard code the scan codes
     // instead.  hopefully this works across all keyboards.
@@ -417,7 +433,7 @@ static bool keyboardHookHandler(WPARAM wParam, LPARAM lParam)
     PostThreadMessage(g_threadID, DESKFLOW_MSG_KEY, charAndVirtKey, lParam);
   }
 
-  if (g_mode == kHOOK_RELAY_EVENTS) {
+  if (isRelayingEvents()) {
     // let certain keys pass through
     switch (wParam) {
     case VK_CAPITAL:
@@ -490,6 +506,22 @@ static LRESULT CALLBACK keyboardLLHook(int code, WPARAM wParam, LPARAM lParam)
 
 static bool mouseHookHandler(WPARAM wParam, int32_t x, int32_t y, int32_t data)
 {
+  // keyboard follow mode: the mouse is never eaten and never relayed, every
+  // computer keeps using its own mouse and its own cursor.  We still report the
+  // movement so the server can take the keyboard back from a client.
+  if (g_mode == kHOOK_KEYBOARD_FOLLOW) {
+    switch (wParam) {
+    case WM_NCMOUSEMOVE:
+    case WM_MOUSEMOVE:
+      PostThreadMessage(g_threadID, DESKFLOW_MSG_MOUSE_MOVE, x, y);
+      break;
+
+    default:
+      break;
+    }
+    return false;
+  }
+
   switch (wParam) {
   case WM_LBUTTONDOWN:
   case WM_MBUTTONDOWN:

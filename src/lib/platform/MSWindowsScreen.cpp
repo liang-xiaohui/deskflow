@@ -94,6 +94,14 @@ MSWindowsScreen::MSWindowsScreen(bool isPrimary, bool useHooks, IEventQueue *eve
 
   s_screen = this;
   try {
+    // keyboard follow mode: screens are never switched by cursor movement and
+    // every computer keeps using its own mouse, so the mouse never has to be
+    // eaten or warped.  Only the keyboard is relayed while a client holds it.
+    m_keyboardFollow = m_isPrimary && Settings::value(Settings::Server::KeyboardFollow).toBool();
+    if (m_keyboardFollow) {
+      LOG_INFO("keyboard follow mode: the local mouse and cursor stay local");
+    }
+
     if (m_isPrimary && m_useHooks) {
       m_hook.loadLibrary();
     }
@@ -193,8 +201,8 @@ void MSWindowsScreen::enable()
     // set jump zones
     m_hook.setZone(m_x, m_y, m_w, m_h, getJumpZoneSize());
 
-    // watch jump zones
-    m_hook.setMode(kHOOK_WATCH_JUMP_ZONE);
+    // watch jump zones, or keep the mouse local and only relay the keyboard
+    m_hook.setMode(m_keyboardFollow ? kHOOK_KEYBOARD_FOLLOW : kHOOK_WATCH_JUMP_ZONE);
   }
 }
 
@@ -239,8 +247,8 @@ void MSWindowsScreen::enter()
     // enable special key sequences on win95 family
     enableSpecialKeys(true);
 
-    // watch jump zones
-    m_hook.setMode(kHOOK_WATCH_JUMP_ZONE);
+    // watch jump zones, or keep the mouse local and only relay the keyboard
+    m_hook.setMode(m_keyboardFollow ? kHOOK_KEYBOARD_FOLLOW : kHOOK_WATCH_JUMP_ZONE);
 
     // all messages prior to now are invalid
     nextMark();
@@ -277,6 +285,15 @@ bool MSWindowsScreen::canLeave()
 
 void MSWindowsScreen::leave()
 {
+  if (m_keyboardFollow) {
+    // Keyboard follow mode never leaves the screen: the cursor stays on this
+    // computer and only the keyboard may be relayed elsewhere.  Warping the
+    // cursor to the centre and switching the hook to relay (which eats the
+    // mouse too) would break that.
+    LOG_VERBOSE("ignoring leave request: keyboard follow mode keeps the cursor here");
+    return;
+  }
+
   // get keyboard layout of foreground window.  we'll use this
   // keyboard layout for translating keys sent to clients.
   m_keyLayout = AppUtilWindows::instance().getCurrentKeyboardLayout();
@@ -314,6 +331,24 @@ void MSWindowsScreen::leave()
 
   // now off screen
   m_isOnScreen = false;
+}
+
+void MSWindowsScreen::setKeyboardFollowDivert(bool divert)
+{
+  LOG_VERBOSE("keyboard follow: %s the local keyboard", divert ? "relaying" : "keeping");
+  m_hook.setKeyboardDivert(divert);
+}
+
+bool MSWindowsScreen::getLocalCursorPos(int32_t &x, int32_t &y) const
+{
+  POINT pos;
+  if (GetCursorPos(&pos) == 0) {
+    return false;
+  }
+
+  x = pos.x;
+  y = pos.y;
+  return true;
 }
 
 bool MSWindowsScreen::setClipboard(ClipboardID, const IClipboard *src)
