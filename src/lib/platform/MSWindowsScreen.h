@@ -259,6 +259,9 @@ private:
   // stays local and is never eaten, only the keyboard is relayed
   bool m_keyboardFollow = false;
 
+  // true while the keyboard is currently handed to another computer
+  bool m_keyboardFollowDiverted = false;
+
   // true if mouse has entered the screen
   bool m_isOnScreen;
 

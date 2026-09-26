@@ -207,7 +207,7 @@ B: 用户移动自己的鼠标 ──► A 的 onMouseMovePrimary ──► setK
 | `src/lib/deskflow/IPlatformScreen.h` | 改 | 新增两个**非纯虚**默认实现：`setKeyboardFollowDivert(bool)`（默认只打日志）、`getLocalCursorPos(int32_t&, int32_t&) const`（默认转发 `getCursorPos`，保证其它平台老代码零改动即可编译） |
 | `src/lib/platform/MSWindowsHook.h` | 改 | `EHookMode` 新增 `kHOOK_KEYBOARD_FOLLOW`；新增 `static void setKeyboardDivert(bool)` |
 | `src/lib/platform/MSWindowsHook.cpp` | 改 | ① 新增 `g_keyboardDivert` 与 `isRelayingEvents()`（= relay 模式 或 KFM+已接管）；② 键盘分支的两处 `g_mode == kHOOK_RELAY_EVENTS` 判断改用 `isRelayingEvents()`；③ `mouseHookHandler` 开头加 KFM 分支：只上报 `DESKFLOW_MSG_MOUSE_MOVE`，**一律 `return false`**（永不吞鼠标） |
-| `src/lib/platform/MSWindowsScreen.h` / `.cpp` | 改 | ① 新增成员 `m_keyboardFollow`（构造时读设置）；② 实现 `setKeyboardFollowDivert` / `getLocalCursorPos`（直接 `GetCursorPos`）；③ `enable()`/`enter()` 选钩子模式：KFM 用 `kHOOK_KEYBOARD_FOLLOW`，否则 `kHOOK_WATCH_JUMP_ZONE`；④ `leave()` 在 KFM 下直接 return（防呆：绝不 warp 光标、绝不把钩子切回 relay） |
+| `src/lib/platform/MSWindowsScreen.h` / `.cpp` | 改 | ① 新增成员 `m_keyboardFollow`（构造时读设置）与 `m_keyboardFollowDiverted`；② 实现 `setKeyboardFollowDivert`：**接管前**把本地正按住的键用 `fakeLocalKey(..., false)` 释放（否则本地会卡住修饰键），**归还时**用 `MSWindowsHook::getPhysicalKeyState()` 找出仍被物理按住的键并重新按下（否则用户正按着的 Shift 在本地会丢失）；③ 实现 `getLocalCursorPos`（直接 `GetCursorPos`）；④ `enable()`/`enter()` 选钩子模式：KFM 用 `kHOOK_KEYBOARD_FOLLOW`，否则 `kHOOK_WATCH_JUMP_ZONE`；⑤ `leave()` 在 KFM 下直接 return（防呆：绝不 warp 光标、绝不把钩子切回 relay） |
 
 ### 4.5 配置
 
@@ -266,6 +266,8 @@ Linux（X11/libei）同理：`XWindowsScreen` / `EiScreen` 各加两个实现。
 | 客户端进程崩溃/断线 | `removeClient` 收回键盘（`m_keyboardTarget=nullptr` + 解除 divert） | 不会把键盘锁在远端 |
 | 网络抖动导致 `CBYE` 丢包 | 靠 TCP 传输，不会丢；连接断开即回收 | |
 | 客户端按住 Ctrl 时键盘被抢走 | 服务端发 `DKBF(0)`，客户端 `fakeAllKeysUp()` | 防"Ctrl 卡死" |
+| 服务端按住 Shift 时键盘被抢走 | divert 打开前用 `fakeLocalKey(..., false)` 释放本地已按下的键 | 否则本地 OS 永远收不到 key up |
+| 键盘归还时用户仍按着某个修饰键 | 用 `getPhysicalKeyState()` 找出来并 `fakeLocalKey(..., true)` 重新按下 | 否则这个键在本地会"丢失"直到松开再按 |
 | UAC / 安全桌面 / Ctrl+Alt+Del | **注入不了**，与原模式一致的限制 | 需要服务模式（`Use Service`）才能进安全桌面 |
 | 全屏游戏 / 反作弊 | 注入可能被丢弃 | 同原模式 |
 | 屏保激活 | `switchScreen()` 被 KFM 短路 → 光标不再跳到 (0,0)；`screensaver()` 消息仍正常广播 | 见 §4.2 ⑤ |
