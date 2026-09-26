@@ -205,9 +205,8 @@ B: 用户移动自己的鼠标 ──► A 的 onMouseMovePrimary ──► setK
 | 文件 | 类型 | 内容 |
 |---|---|---|
 | `src/lib/deskflow/IPlatformScreen.h` | 改 | 新增**三个非纯虚**默认实现（保证其它平台老代码零改动即可编译）：① `setKeyboardFollowDivert(bool)`（默认空实现）② `bool getLocalCursorPos(int32_t&, int32_t&) const`（默认转发 `getCursorPos`）③ `setKeyboardFollowLocalCursor(bool)`（默认空实现；只有 macOS 的客户端需要它，因为它的 `enable()` 会藏光标） |
-| `src/lib/platform/MSWindowsHook.h` | 改 | `EHookMode` 新增 `kHOOK_KEYBOARD_FOLLOW`；新增 `static void setKeyboardDivert(bool)` |
-| `src/lib/platform/MSWindowsHook.cpp` | 改 | ① 新增 `g_keyboardDivert` 与 `isRelayingEvents()`（= relay 模式 或 KFM+已接管）；② 键盘分支的两处 `g_mode == kHOOK_RELAY_EVENTS` 判断改用 `isRelayingEvents()`；③ `mouseHookHandler` 开头加 KFM 分支：只上报 `DESKFLOW_MSG_MOUSE_MOVE`，**一律 `return false`**（永不吞鼠标） |
-| `src/lib/platform/MSWindowsScreen.h` / `.cpp` | 改 | ① 新增成员 `m_keyboardFollow`（构造时读设置）与 `m_keyboardFollowDiverted`；② 实现 `setKeyboardFollowDivert`：整体包在 `fakeInputBegin()/fakeInputEnd()` 里（否则补偿键会被钩子上报给服务端、再转发到远端，制造假的 key up/down）。**接管前**把本地正按住的键用 `fakeLocalKey(..., false)` 释放（否则本地会卡住修饰键），**归还时**用 `MSWindowsHook::getPhysicalKeyState()` 找出仍被物理按住的键并重新按下（否则用户正按着的 Shift 在本地会丢失）；③ 实现 `getLocalCursorPos`（直接 `GetCursorPos`）；④ `enable()`/`enter()` 选钩子模式：KFM 用 `kHOOK_KEYBOARD_FOLLOW`，否则 `kHOOK_WATCH_JUMP_ZONE`；⑤ `leave()` 在 KFM 下直接 return（防呆：绝不 warp 光标、绝不把钩子切回 relay）。Windows 客户端本来就从不隐藏光标，所以 `setKeyboardFollowLocalCursor` 用默认空实现即可 |
+| `src/lib/platform/MSWindowsHook.h` / `.cpp` | 改 | ① `EHookMode` 新增 `kHOOK_KEYBOARD_FOLLOW`；② 新增 `setKeyboardDivert(bool)`；③ **新增 `setIgnoreInjected(bool)`**：钩子在收起键盘状态下**同步**过滤自己合成（`LLKHF_INJECTED`）的按键，既不吞也不上报 —— KFM 的补偿键靠它才不会变成远端收到假事件 |
+| `src/lib/platform/MSWindowsScreen.h` / `.cpp` | 改 | ① 新增成员 `m_keyboardFollow`（构造时读设置）与 `m_keyboardFollowDiverted`；② 实现 `setKeyboardFollowDivert`：整体包在 `m_hook.setIgnoreInjected(true/false)` 之间（**必须同步生效**——`fakeInputBegin()` 是走 desk 线程消息的，异步，会在补偿键注入之后才生效，靠它不可靠）。**接管前**把本地正按住的键用 `fakeLocalKey(..., false)` 释放（否则本地会卡住修饰键），**归还时**用 `MSWindowsHook::getPhysicalKeyState()` 找出仍被物理按住的键并重新按下（否则用户正按着的 Shift 在本地会丢失）；③ 实现 `getLocalCursorPos`（直接 `GetCursorPos`）；④ `enable()`/`enter()` 选钩子模式：KFM 用 `kHOOK_KEYBOARD_FOLLOW`，否则 `kHOOK_WATCH_JUMP_ZONE`；⑤ `leave()` 在 KFM 下直接 return（防呆：绝不 warp 光标、绝不把钩子切回 relay）。Windows 客户端本来就从不隐藏光标，所以 `setKeyboardFollowLocalCursor` 用默认空实现即可 |
 
 ### 4.5 配置
 
@@ -271,7 +270,7 @@ GUI 开关是后续待办（见 §8）。
 | `getCursorPos()` 用 `CGEventCreate(nullptr)` + `CGEventGetLocation`，读的是**系统真实光标** | `OSXScreen.mm:245-255` | 坐标是 Quartz 全局坐标（主屏左上原点、y 向下），**与 Deskflow 一致，不需要翻转 y**（`NSEvent.mouseLocation` 才需要，本仓库没用） |
 | 键盘注入：`OSXKeyState::fakeKey()` → `postHIDVirtualKey()`（IOHIDPostEvent）/ `postKeyboardKey()`（`CGEventCreateKeyboardEvent` + `CGEventPost(kCGHIDEventTap,...)`） | `OSXKeyState.cpp:643-718` | ⚠️ 见 6.5：`CGEventPost` 到 HID tap 会**再次进入我们自己 head-insert 的 tap** |
 | 物理按键读取：`OSXKeyState::pollPressedKeys(KeyButtonSet&)`（`GetKeys`）/ `pollActiveModifiers()`（`GetCurrentKeyModifiers`） | `OSXKeyState.cpp:494-506`、`442-471` | 等价于 Windows 的 `getPhysicalKeyState`，用于"归还键盘时恢复仍按住的键" |
-| macOS **没有** `fakeLocalKey`，也**没有** `m_primaryKeyDownList` | — | 补偿键要自己实现（6.5） |
+| macOS **没有** `fakeLocalKey`；`fakeInputBegin/End` 是 **`// FIXME -- not implemented`** 空实现 | `OSXScreen.mm:291-299` | 补偿键要自己实现，且"忽略自己合成的事件"这个机制 macOS 上**还不存在**（见 6.5，顺便把它补上） |
 | 权限：primary 构造时要求 `AXIsProcessTrusted()`，`checkAXPermissions()` 每秒复查 | `OSXScreen.mm:131-137`、`1522-1532` | KFM 的吞键**不需要额外权限**（tap 本来就可拦截） |
 | 安全输入（密码框）：`IsSecureEventInputEnabled()` 为真时系统扣住键盘 | `OSXScreen.mm:1827-1892` | KFM 转发会静默失效，属已知限制（与原模式一致） |
 | tap 跑在独立线程 + 独立 `CFRunLoop` | `OSXScreen.h:301-304` | ⚠️ divert 标志**跨线程**：服务端线程写、tap 线程读 → 必须 `std::atomic<bool>` |
@@ -288,6 +287,7 @@ void setKeyboardFollowLocalCursor(bool keepVisible) override;
 bool m_keyboardFollow = false;                        // 构造时读 Settings::Server::KeyboardFollow（与 Windows 对齐）
 std::atomic<bool> m_keyboardFollowDiverted{false};     // 服务端线程写、tap 线程读
 bool m_keyboardFollowLocalCursor = false;              // 仅 secondary 用
+std::atomic<bool> m_keyboardFollowFakeInput{false};     // 仅 macOS 用，见 6.5
 ```
 
 **① `setKeyboardFollowDivert`（只扣键盘，绝不碰鼠标）**
@@ -299,7 +299,11 @@ void OSXScreen::setKeyboardFollowDivert(bool divert)
     return;
   }
 
-  // 补偿键只给本机应用看，且必须在非 tap 线程注入（本函数由服务端事件线程调用）
+  // 补偿键只给本机应用看：fakeInputBegin() 让 tap 原样放行、且不调用 onKey()
+  // （等价于 Windows 的 setIgnoreInjected）。必须同步生效，所以用成员标志而不是
+  // 走任何跨线程消息。
+  fakeInputBegin();
+
   if (divert) {
     // 此刻物理按住的键已经被本机应用收到了，但它们的 key-up 之后会被转发到别的
     // 电脑，所以先在本机释放，否则会卡住修饰键
@@ -318,6 +322,7 @@ void OSXScreen::setKeyboardFollowDivert(bool divert)
     }
   }
 
+  fakeInputEnd();
   m_keyboardFollowDiverted.store(divert);
   LOG_VERBOSE("keyboard follow: %s the local keyboard", divert ? "relaying" : "keeping");
 }
@@ -426,23 +431,48 @@ void OSXScreen::leave()
 1. divert 打开时注入的补偿 key-up 会被自己的 tap 吞掉或再次上报 → 本机应用收不到、远端收到假事件；
 2. 补偿 key-down 同理。
 
-处理办法（照 Windows 的 marker 思路）：
-```cpp
-static constexpr int64_t kLocalOnlyKeyMarker = 0x4B464D31;   // 'KFM1'
+处理办法：**不要自己发明 marker，把框架里缺的 `fakeInputBegin/End` 补上就行。**
 
-void OSXScreen::postLocalOnlyKey(KeyButton button, bool down)
-{
-  CGKeyCode code = m_keyState->mapKeyButtonToVirtualKey(button);   // 若不可见，在 OSXKeyState 里放开
-  CGEventRef event = CGEventCreateKeyboardEvent(nullptr, code, down);
-  if (event == nullptr) {
-    return;
-  }
-  CGEventSetIntegerValueField(event, kCGEventSourceUserData, kLocalOnlyKeyMarker);
-  CGEventPost(kCGHIDEventTap, event);
-  CFRelease(event);
+macOS 上这两个函数是空的 FIXME 实现（`OSXScreen.mm:291-299`），而它们正是 Deskflow 为"忽略自己合成的事件"预留的 API（Windows 用 `fakeInputBegin` 设 `g_fakeServerInput`，见 `MSWindowsHook.cpp:246-249`；接口文档见 `IPrimaryScreen.h:134-147`）。实现成：
+
+```cpp
+// OSXScreen.h
+std::atomic<bool> m_keyboardFollowFakeInput{false};
+
+// OSXScreen.mm
+void OSXScreen::fakeInputBegin() { m_keyboardFollowFakeInput.store(true); }
+void OSXScreen::fakeInputEnd()   { m_keyboardFollowFakeInput.store(false); }
+
+// handleCGInputEvent 的**第一行**（在 switch 之前）
+if (screen->m_keyboardFollowFakeInput.load()) {
+  return event;   // 自己合成的补偿键：原样放行，且不调用 onKey()（不上报给服务端）
 }
 ```
-> 注意：**不要**在 tap 回调里调用 `CGEventPost`（Apple 明确说明 tap 回调里 post 的事件会被丢弃）。本函数只由服务端事件线程经 `setKeyboardFollowDivert()` 调用，满足要求。
+
+这一下同时解决了三件事（不被吞 / 能到本机 / 不上报），而且**不依赖任何未经验证的 Apple 行为**——不用赌 `CGEventPost` 的事件会不会回到自己的 tap，也不用赌 userData 是否可靠。
+
+要点：
+- 必须在 `switch` **之前**返回，否则 `onKey(event)` 仍会把补偿键上报给服务端，又变成"远端收到假事件"。
+- 标志由服务端事件线程写、tap 线程读 → 必须 `std::atomic<bool>`。
+- `deskflow::Screen::fakeInputBegin()` 自带 `assert(!m_fakeInput)`（`Screen.cpp:337-351`），所以**不要**从 `Screen` 层调用、也不要嵌套；只在 `setKeyboardFollowDivert` 里调一次。
+- **不要**在 tap 回调里调用 `CGEventPost`（Apple 说明 tap 回调里 post 的事件会被丢弃）。`setKeyboardFollowDivert` 由服务端事件线程调用，满足要求。
+- 有了上面的标志，`postLocalOnlyKey` 本身不需要做任何标记：
+  ```cpp
+  void OSXScreen::postLocalOnlyKey(KeyButton button, bool down)
+  {
+    // mapKeyButtonToVirtualKey 若不可见，按 6.7 第 2 条处理
+    CGKeyCode code = m_keyState->mapKeyButtonToVirtualKey(button);
+    CGEventRef event = CGEventCreateKeyboardEvent(nullptr, code, down);
+    if (event == nullptr) {
+      return;
+    }
+    CGEventPost(kCGHIDEventTap, event);
+    CFRelease(event);
+  }
+  ```
+- 退路（仅当上面实测不成立时）：改用 `kCGEventSourceUserData` 标记 + 回调识别；最后退路是注入期间临时 `CGEventTapEnable(port, false)` 再恢复。
+
+> Windows 侧的等价实现是 `MSWindowsHook::setIgnoreInjected()`（同步过滤 `LLKHF_INJECTED`）。两端语义要一致：**补偿键只到本机、不上报、不被吞**。
 
 ### 6.6 线程安全
 
@@ -454,7 +484,7 @@ void OSXScreen::postLocalOnlyKey(KeyButton button, bool down)
 
 ### 6.7 必须先在真机验证 / 可能推翻方案的点
 
-1. **`fakeLocalKey` 不存在**：6.5 的 marker 方案是设计推演，必须在真机上验证"补偿键确实只到本机应用、且不会被自己吞"。若 marker 不可靠，退路是"临时 `CGEventTapEnable(port, false)` → 注入 → 恢复"。
+1. **`fakeInputBegin/End` 需要你新实现**（macOS 上是空 FIXME）：这是本次唯一"新框架行为"。实测要点两条：① 补偿键确实到达本机应用；② 远端收不到假 key up/down（对话日志里没有多出来的 `DKUP`）。实现细节见 6.5，标志必须原子、必须在 `switch` 前判断。
 2. **`mapKeyButtonToVirtualKey` 的可见性**：若不是 public，在 `OSXKeyState.h` 加一个 public 包装（这是唯一允许动 `OSXKeyState` 的情形）。
 3. **客户端光标**：`enable()` 的 hide+warp 改动是否影响到**原模式**（KFM 关闭时行为必须完全不变）。务必在 `server/keyboardFollow=false` 下回归一次。
 4. **媒体键语义**：吞还是不吞，需与用户确认（建议吞）。
@@ -537,6 +567,25 @@ cmake --build build --config Release --target deskflow-core deskflow
 ```
 
 Windows 上若没有 OpenSSL，推荐 `vcpkg install openssl:x64-windows`（或 Qt Maintenance Tool 里的 OpenSSL Toolkit），然后给 CMake 加 `-DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake`。
+
+#### 9.1.1 本机（开发用的 Win 机）已经踩过的三个坑与现成解法
+
+> 这三条与环境强相关，换机器可跳过；但 2026-09 在这台机器上确实都撞到了。
+
+| 坑 | 现象 | 解法 |
+|---|---|---|
+| `vcvars64.bat` 坏 | cmd 解析报错"此时不应有 \Windows" | 手拼 `INCLUDE`/`LIB`/`PATH`（MSVC 14.44.35207 + Windows SDK 10.0.26100.0）。已封装：`deskflow-tools/build_windows.py` |
+| vcpkg 缺 `scripts/vcpkgTools.xml` | 每次 install 都重新"获取工具"，且解压子进程必报 `CreateFileW stdin failed with 231 (All pipe instances are busy.)` —— bash 与 PowerShell/ConPTY 下都一样，`7zr.exe` 手工运行却正常 | **放弃 vcpkg**，改用下面两条 |
+| 本机无 OpenSSL 3、也没有原生 Windows Perl | `find_package(OpenSSL 3.0 REQUIRED)` 直接让 configure 失败 | ① 只想验证编译：用 `deskflow-tools/stub-openssl/cmake/FindOpenSSL.cmake`（`-DCMAKE_MODULE_PATH=`）让 configure 通过，静态库照样全量编译；② 想要可运行产物：装真 OpenSSL（Qt Maintenance Tool 的 OpenSSL Toolkit / 预编译包 / 在 vcpkg 正常的机器上 `vcpkg install openssl:x64-windows`） |
+
+已经实测通过的编译验证方式（本机）：
+
+```bash
+python deskflow-tools/build_windows.py --wipe                 # configure（用 stub OpenSSL）
+python deskflow-tools/build_windows.py app server client platform   # 全量编译改动涉及的静态库
+python deskflow-tools/check_tus.py                            # 单文件语法快检（不需要 OpenSSL）
+```
+> 注意：Git for Windows 自带的 perl 是 cygwin 版，**OpenSSL 3.6 明确拒绝**用它做 VC-WIN64A 构建（"doesn't produce Windows like paths"），所以想在这台机器上从源码造 OpenSSL 必须先弄一个原生 Windows Perl（Strawberry）。
 
 ### 9.2 双机手工用例（Windows，必测）
 

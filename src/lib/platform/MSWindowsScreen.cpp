@@ -337,10 +337,12 @@ void MSWindowsScreen::setKeyboardFollowDivert(bool divert)
 {
   if (divert != m_keyboardFollowDiverted) {
     // The compensation keys below are meant for the local applications only.
-    // fakeInputBegin() makes the hook pass them through without reporting them
-    // to the server, so they are never relayed to whichever computer holds the
-    // keyboard at this moment.
-    fakeInputBegin();
+    // setIgnoreInjected() makes the hook drop the report for them (and lets them
+    // through to the local OS) for as long as we synthesize them, so they are
+    // never relayed to whichever computer holds the keyboard at this moment.
+    // It takes effect synchronously, unlike fakeInputBegin() which goes through
+    // the desk thread.
+    m_hook.setIgnoreInjected(true);
 
     if (divert) {
       // Any key that is physically held right now was delivered to the local
@@ -370,7 +372,7 @@ void MSWindowsScreen::setKeyboardFollowDivert(bool divert)
       }
     }
 
-    fakeInputEnd();
+    m_hook.setIgnoreInjected(false);
     m_keyboardFollowDiverted = divert;
   }
 

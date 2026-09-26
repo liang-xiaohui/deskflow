@@ -30,6 +30,10 @@ static EHookMode g_mode = kHOOK_DISABLE;
 // keyboard follow mode: true while the keyboard has been handed to another
 // computer and the local keyboard therefore has to be swallowed
 static bool g_keyboardDivert = false;
+
+// true while the server synthesizes keys for its own local applications (see
+// MSWindowsHook::setIgnoreInjected)
+static bool g_ignoreInjected = false;
 static uint32_t g_zoneSides = 0;
 static int32_t g_zoneSize = 0;
 static int32_t g_xScreen = 0;
@@ -154,6 +158,11 @@ void MSWindowsHook::setMode(EHookMode mode)
 void MSWindowsHook::setKeyboardDivert(bool divert)
 {
   g_keyboardDivert = divert;
+}
+
+void MSWindowsHook::setIgnoreInjected(bool ignore)
+{
+  g_ignoreInjected = ignore;
 }
 
 // true when local key events must be eaten so they can be relayed.  In keyboard
@@ -470,6 +479,12 @@ static LRESULT CALLBACK keyboardLLHook(int code, WPARAM wParam, LPARAM lParam)
 
     bool const injected = info->flags & LLKHF_INJECTED;
     if (!g_isPrimary && injected) {
+      return CallNextHookEx(g_keyboardLL, code, wParam, lParam);
+    }
+
+    // keys we synthesize for our own local applications must reach them without
+    // being reported to the server (or eaten while the keyboard is diverted)
+    if (g_ignoreInjected && injected) {
       return CallNextHookEx(g_keyboardLL, code, wParam, lParam);
     }
 

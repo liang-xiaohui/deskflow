@@ -71,6 +71,16 @@ public:
   */
   static void setKeyboardDivert(bool divert);
 
+  //! Ignore synthesized (injected) key events
+  /*!
+  Used while the server injects compensation keys for keyboard follow mode: the
+  events must reach the local applications but must not be reported to the server
+  as user input.  Unlike fakeInputBegin() this takes effect immediately (it does
+  not travel through the desk thread), which matters because the very next thing
+  we do is synthesize the key.
+  */
+  static void setIgnoreInjected(bool ignore);
+
   //! Copy the hook's physical key state; false until it has observed an event.
   static bool getPhysicalKeyState(BYTE keys[256]);
 
