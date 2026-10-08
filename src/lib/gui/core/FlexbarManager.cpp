@@ -119,8 +119,12 @@ void FlexbarManager::start()
   m_timer.start();
   publish(tr("Starting"));
   if (m_options.transport == Options::Transport::ChildProcess) {
-    if (!QFileInfo(m_options.program).isExecutable() || m_options.arguments.isEmpty() ||
-        !QFileInfo(m_options.arguments.first()).isFile()) {
+    const auto dataIndex = m_options.arguments.indexOf(QStringLiteral("--data"));
+    if (!QFileInfo(m_options.program).isAbsolute() || !QFileInfo(m_options.program).isExecutable() ||
+        m_options.arguments.isEmpty() || !QFileInfo(m_options.arguments.first()).isAbsolute() ||
+        !QFileInfo(m_options.arguments.first()).isFile() ||
+        (dataIndex >= 0 && (dataIndex + 1 >= m_options.arguments.size() ||
+                            !QDir::isAbsolutePath(m_options.arguments.at(dataIndex + 1))))) {
       fail(tr("Flexbar agent is not installed; select its runtime and package in Advanced"));
       return;
     }
@@ -259,7 +263,7 @@ void FlexbarManager::consume(const QByteArray &data)
 void FlexbarManager::tick()
 {
   if (m_stopping) {
-    if (m_stoppingSince.elapsed() > 5000) {
+    if (m_stoppingSince.elapsed() > 20000) {
       if (m_process.state() != QProcess::NotRunning)
         m_process.kill();
       if (m_socket.state() != QLocalSocket::UnconnectedState)
@@ -277,7 +281,7 @@ void FlexbarManager::tick()
     return;
   }
   if (m_lastStatus.isValid() && m_lastStatus.elapsed() > 6000) {
-    fail(tr("Flexbar stopped responding; controls have been suspended"));
+    fail(tr("Flexbar stopped responding; stopping controls"));
     return;
   }
   send(QStringLiteral("status"));
@@ -343,7 +347,7 @@ void FlexbarManager::shutdown()
     }
     if (m_process.state() != QProcess::NotRunning) {
       m_process.closeWriteChannel();
-      if (!m_process.waitForFinished(5000)) {
+      if (!m_process.waitForFinished(20000)) {
         m_process.kill();
         m_process.waitForFinished(1000);
       }

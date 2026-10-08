@@ -1608,8 +1608,8 @@ Enabling this setting will disable the server config GUI.</source>
         <translation>对端离线</translation>
     </message>
     <message>
-        <source>Flexbar stopped responding; controls have been suspended</source>
-        <translation>Flexbar 无响应，控制已暂停</translation>
+        <source>Flexbar stopped responding; stopping controls</source>
+        <translation>Flexbar 无响应，正在停止控制</translation>
     </message>
 </context>
 <context>
@@ -1639,7 +1639,7 @@ Enabling this setting will disable the server config GUI.</source>
         <translation>Flexbar 集成目前仅支持 macOS 和 Windows</translation>
     </message>
     <message>
-        <source>Runs with Deskflow, including in the tray. Disabling or quitting stops this module, not keyboard sharing. Pairing and the last page are preserved.</source>
+        <source>Runs with Deskflow, including in the tray. Disabling Flexbar does not affect keyboard sharing. Quitting Deskflow stops this module. Pairing and the last page are preserved.</source>
         <translation>随 Deskflow 运行，缩到托盘后继续工作。关闭开关或退出 Deskflow 时停止本模块；关闭开关不影响键鼠共享。保留配对和上次页面。</translation>
     </message>
     <message>

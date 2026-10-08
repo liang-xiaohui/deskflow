@@ -7,7 +7,7 @@ Flexbar 是 Deskflow 的可选用户会话模块。设置中的 Flexbar 标签�
 - 开启后随 Deskflow GUI 运行；缩到托盘不停止，真正退出时停止本模块。Flexbar 不由系统权限的 Deskflow Daemon 承载。
 - 只改 Flexbar 设置不会重启键鼠 Core。关闭后保留配对、业务去重状态和上次页面，不补发旧操作。
 - Mac 通过本用户私有 socket 管理 FlexDesigner 插件。插件默认休眠，不启动原生捕获、输入或网络宿主；启用后启动。关闭、父连接断开或 6 秒管理租期失效时撤权并清理。
-- Windows 由 QProcess 启动独立用户进程，以 stdin/stdout 管理；停止后等待正常退出，超时仅终止自己创建的子进程，不搜索或结束其他 Node/Deskflow/FlexDesigner 进程。
+- Windows 由 QProcess 启动独立用户进程，以 stdin/stdout 管理；停止先撤权，最多等待 20 秒排空请求并正常退出，超时仅终止自己创建的子进程，不搜索或结束其他 Node/Deskflow/FlexDesigner 进程。运行环境、入口和数据目录须为绝对路径。
 - Mac 插件断开后有限频率重连。Windows 启动失败不循环重启；明确显示安装、配对或已有手动实例问题，修复后由用户点击重启。
 
 ## 安装与配置

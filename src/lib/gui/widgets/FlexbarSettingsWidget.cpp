@@ -42,8 +42,8 @@ FlexbarSettingsWidget::FlexbarSettingsWidget(FlexbarManager *manager, QWidget *p
   role->setWordWrap(true);
   layout->addWidget(role);
   auto *description = new QLabel(
-      tr("Runs with Deskflow, including in the tray. Disabling or quitting stops this module, not keyboard sharing. "
-         "Pairing and the last page are preserved."),
+      tr("Runs with Deskflow, including in the tray. Disabling Flexbar does not affect keyboard sharing. "
+         "Quitting Deskflow stops this module. Pairing and the last page are preserved."),
       this
   );
   description->setWordWrap(true);
