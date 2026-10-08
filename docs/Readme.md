@@ -6,6 +6,8 @@ Deskflow is a free and open source keyboard and mouse sharing app. Use the keybo
 
 ## Getting help online
 
+The keyboard-follow fork includes an optional [Flexbar module](dev/flexbar-integration.md), managed from Deskflow preferences on macOS and Windows. It is disabled by default and requires a compatible Companion package.
+
  - View the [wiki](https://github.com/deskflow/deskflow/wiki) Online resource
 
 ### Chat with us

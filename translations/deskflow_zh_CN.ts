@@ -1541,4 +1541,154 @@ Enabling this setting will disable the server config GUI.</source>
         <translation>一台同名的计算机已经存在</translation>
     </message>
 </context>
+<context>
+    <name>deskflow::gui::FlexbarManager</name>
+    <message>
+        <source>Disabled</source>
+        <translation>已关闭</translation>
+    </message>
+    <message>
+        <source>Starting</source>
+        <translation>正在启动</translation>
+    </message>
+    <message>
+        <source>Stopping</source>
+        <translation>正在停止</translation>
+    </message>
+    <message>
+        <source>Waiting for FlexDesigner and the managed Flexbar plugin</source>
+        <translation>等待 FlexDesigner 和支持 Deskflow 管理的 Flexbar 插件</translation>
+    </message>
+    <message>
+        <source>Cannot start the Flexbar agent; check the runtime and package paths</source>
+        <translation>无法启动 Flexbar 后台，请检查运行环境与安装包路径</translation>
+    </message>
+    <message>
+        <source>Flexbar agent is not installed; select its runtime and package in Advanced</source>
+        <translation>未安装 Flexbar 后台，请在高级设置中选择运行环境与安装包</translation>
+    </message>
+    <message>
+        <source>Unsafe Flexbar local socket permissions</source>
+        <translation>Flexbar 本地接口权限不安全</translation>
+    </message>
+    <message>
+        <source>Agent stopped; check configuration or an already running manual instance, then restart</source>
+        <translation>后台已停止，请检查配置或已有的手动实例，再重启模块</translation>
+    </message>
+    <message>
+        <source>Invalid Flexbar management response</source>
+        <translation>Flexbar 管理接口返回了无效数据</translation>
+    </message>
+    <message>
+        <source>Flexbar needs attention: %1</source>
+        <translation>Flexbar 需要处理：%1</translation>
+    </message>
+    <message>
+        <source>Flexbar is not running</source>
+        <translation>Flexbar 未运行</translation>
+    </message>
+    <message>
+        <source>Running · %1 · %2 · Target: %3</source>
+        <translation>运行中 · %1 · %2 · 当前：%3</translation>
+    </message>
+    <message>
+        <source>Page ready</source>
+        <translation>设备页面就绪</translation>
+    </message>
+    <message>
+        <source>Enter the Flexbar workspace</source>
+        <translation>请进入 Flexbar 双机工作台</translation>
+    </message>
+    <message>
+        <source>Peer connected</source>
+        <translation>对端已连接</translation>
+    </message>
+    <message>
+        <source>Peer offline</source>
+        <translation>对端离线</translation>
+    </message>
+    <message>
+        <source>Flexbar stopped responding; controls have been suspended</source>
+        <translation>Flexbar 无响应，控制已暂停</translation>
+    </message>
+</context>
+<context>
+    <name>deskflow::gui::FlexbarSettingsWidget</name>
+    <message>
+        <source>Enable Flexbar</source>
+        <translation>启用 Flexbar</translation>
+    </message>
+    <message>
+        <source>Check connection</source>
+        <translation>检查连接</translation>
+    </message>
+    <message>
+        <source>Restart module</source>
+        <translation>重启模块</translation>
+    </message>
+    <message>
+        <source>This Mac: USB device host · Legion: remote controls and tasks</source>
+        <translation>本机 Mac：连接 Flexbar · Legion：提供远程控制与任务</translation>
+    </message>
+    <message>
+        <source>This Windows PC: remote controls and tasks · Mac: USB device host</source>
+        <translation>本机 Windows：提供远程控制与任务 · Mac：连接 Flexbar</translation>
+    </message>
+    <message>
+        <source>Flexbar integration currently requires macOS or Windows</source>
+        <translation>Flexbar 集成目前仅支持 macOS 和 Windows</translation>
+    </message>
+    <message>
+        <source>Runs with Deskflow, including in the tray. Disabling or quitting stops this module, not keyboard sharing. Pairing and the last page are preserved.</source>
+        <translation>随 Deskflow 运行，缩到托盘后继续工作。关闭开关或退出 Deskflow 时停止本模块；关闭开关不影响键鼠共享。保留配对和上次页面。</translation>
+    </message>
+    <message>
+        <source>Requires FlexDesigner and the managed Mac host plugin. Enable starts FlexDesigner if needed; disabling does not quit it.</source>
+        <translation>需要 FlexDesigner 和支持 Deskflow 管理的 Mac 宿主插件。启用时按需启动 FlexDesigner，关闭时不会退出它。</translation>
+    </message>
+    <message>
+        <source>Advanced — installed Windows agent</source>
+        <translation>高级设置 — 已安装的 Windows 后台</translation>
+    </message>
+    <message>
+        <source>Browse…</source>
+        <translation>浏览…</translation>
+    </message>
+    <message>
+        <source>Select data directory</source>
+        <translation>选择数据目录</translation>
+    </message>
+    <message>
+        <source>Select installed file</source>
+        <translation>选择已安装的文件</translation>
+    </message>
+    <message>
+        <source>Node runtime</source>
+        <translation>Node 运行环境</translation>
+    </message>
+    <message>
+        <source>Agent entry (agent.mjs)</source>
+        <translation>后台入口（agent.mjs）</translation>
+    </message>
+    <message>
+        <source>Private data directory</source>
+        <translation>私有数据目录</translation>
+    </message>
+    <message>
+        <source>Automatic</source>
+        <translation>自动查找</translation>
+    </message>
+    <message>
+        <source>Bundled flexbar/agent.mjs</source>
+        <translation>安装包内的 flexbar/agent.mjs</translation>
+    </message>
+    <message>
+        <source>Existing DotFlexbar/windows-agent data</source>
+        <translation>现有 DotFlexbar/windows-agent 数据</translation>
+    </message>
+    <message>
+        <source>Status unavailable</source>
+        <translation>暂无运行状态</translation>
+    </message>
+</context>
 </TS>

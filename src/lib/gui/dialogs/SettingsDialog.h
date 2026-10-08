@@ -12,6 +12,10 @@
 #include "gui/config/ServerConfig.h"
 
 class SettingsDialogButtonBox;
+namespace deskflow::gui {
+class FlexbarManager;
+class FlexbarSettingsWidget;
+}
 
 namespace Ui {
 class SettingsDialog;
@@ -23,7 +27,7 @@ class SettingsDialog : public QDialog
 
 public:
   void extracted();
-  SettingsDialog(QWidget *parent, const ServerConfig &serverConfig);
+  SettingsDialog(QWidget *parent, const ServerConfig &serverConfig, deskflow::gui::FlexbarManager *flexbar = nullptr);
   ~SettingsDialog() override;
 
 Q_SIGNALS:
@@ -87,4 +91,5 @@ private:
   std::unique_ptr<Ui::SettingsDialog> ui;
   const ServerConfig &m_serverConfig;
   SettingsDialogButtonBox *m_buttonBox = nullptr;
+  deskflow::gui::FlexbarSettingsWidget *m_flexbar = nullptr;
 };

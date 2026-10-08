@@ -73,6 +73,13 @@ public:
     inline static const auto LogFile = QStringLiteral("daemon/logFile");
     inline static const auto LogLevel = QStringLiteral("daemon/logLevel");
   };
+  struct Flexbar
+  {
+    inline static const auto Enabled = QStringLiteral("flexbar/enabled");
+    inline static const auto Runtime = QStringLiteral("flexbar/runtime");
+    inline static const auto Agent = QStringLiteral("flexbar/agent");
+    inline static const auto DataDirectory = QStringLiteral("flexbar/dataDirectory");
+  };
   struct Gui
   {
     inline static const auto Autohide = QStringLiteral("gui/autoHide");
@@ -270,6 +277,7 @@ private:
     , QStringLiteral("core")
     , QStringLiteral("daemon")
     , QStringLiteral("gui")
+    , QStringLiteral("flexbar")
     , QStringLiteral("log")
     , QStringLiteral("security")
     , QStringLiteral("server")
@@ -301,6 +309,10 @@ private:
     , Core::Language
     , Daemon::ConfigFile
     , Daemon::Elevate
+    , Flexbar::Enabled
+    , Flexbar::Runtime
+    , Flexbar::Agent
+    , Flexbar::DataDirectory
     , Daemon::LogFile
     , Daemon::LogLevel
     , Log::File
@@ -346,6 +358,7 @@ private:
   // When checking the default values this list contains the ones that default to false.
   inline static const QStringList m_defaultFalseValues = {
       Gui::Autohide
+    , Flexbar::Enabled
     , Gui::AutoStartCore
     , Gui::ShownFirstConnectedMessage
     , Gui::ShownServerFirstStartMessage

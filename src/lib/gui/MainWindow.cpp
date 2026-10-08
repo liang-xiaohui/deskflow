@@ -159,6 +159,8 @@ MainWindow::MainWindow()
   applyConfig();
   m_statusBar->setSecurityIcon(TlsUtility::isEnabled());
   restoreWindow();
+  m_flexbar.applySettings();
+  connect(qApp, &QCoreApplication::aboutToQuit, &m_flexbar, &FlexbarManager::shutdown);
 
 #ifdef Q_OS_MACOS
   // Route native quits (Cmd+Q / Apple menu Quit / Dock "Quit") to the usual close-to-tray decision instead.
@@ -167,6 +169,7 @@ MainWindow::MainWindow()
 }
 MainWindow::~MainWindow()
 {
+  m_flexbar.shutdown();
   // Stop network monitoring
   if (m_networkMonitor) {
     m_networkMonitor->stopMonitoring();
@@ -464,6 +467,7 @@ void MainWindow::stopCore()
 
 void MainWindow::clearSettings()
 {
+  m_flexbar.shutdown();
   qDebug() << "clearing settings";
 
   m_networkMonitor->stopMonitoring();
@@ -506,16 +510,26 @@ void MainWindow::openGetNewVersionUrl() const
 
 void MainWindow::openSettings()
 {
-  auto dialog = SettingsDialog(this, m_serverConfig);
+  QVariantMap previous;
+  for (const auto &key : Settings::validKeys()) {
+    if (!key.startsWith(QStringLiteral("flexbar/")))
+      previous.insert(key, Settings::value(key));
+  }
+  auto dialog = SettingsDialog(this, m_serverConfig, &m_flexbar);
 
   connect(&dialog, &SettingsDialog::requestRemoveAllSettings, this, &MainWindow::clearSettings, Qt::UniqueConnection);
   if (dialog.exec() == QDialog::Accepted) {
-    Settings::save();
+    bool coreSettingsChanged = false;
+    for (auto entry = previous.cbegin(); entry != previous.cend(); ++entry)
+      coreSettingsChanged = coreSettingsChanged || Settings::value(entry.key()) != entry.value();
+    Settings::save(coreSettingsChanged);
     disconnect(&dialog, &SettingsDialog::requestRemoveAllSettings, nullptr, nullptr);
 
-    applyConfig();
+    m_flexbar.applySettings();
+    if (coreSettingsChanged)
+      applyConfig();
 
-    if (m_coreProcess.isStarted()) {
+    if (coreSettingsChanged && m_coreProcess.isStarted()) {
       m_coreProcess.restart();
     }
   }

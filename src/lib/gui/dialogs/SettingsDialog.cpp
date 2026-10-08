@@ -16,6 +16,7 @@
 #include "gui/TlsUtility.h"
 #include "gui/core/NetworkMonitor.h"
 #include "gui/widgets/SettingsDialogButtonBox.h"
+#include "gui/widgets/FlexbarSettingsWidget.h"
 
 #include <QComboBox>
 #include <QDir>
@@ -24,7 +25,7 @@
 
 using namespace deskflow::gui;
 
-SettingsDialog::SettingsDialog(QWidget *parent, const ServerConfig &serverConfig)
+SettingsDialog::SettingsDialog(QWidget *parent, const ServerConfig &serverConfig, FlexbarManager *flexbar)
     : QDialog(parent),
       ui{std::make_unique<Ui::SettingsDialog>()},
       m_serverConfig(serverConfig),
@@ -32,6 +33,8 @@ SettingsDialog::SettingsDialog(QWidget *parent, const ServerConfig &serverConfig
 {
 
   ui->setupUi(this);
+  m_flexbar = new FlexbarSettingsWidget(flexbar, this);
+  ui->tabWidget->addTab(m_flexbar, QStringLiteral("Flexbar"));
   layout()->addWidget(m_buttonBox);
   ui->tabWidget->setCurrentIndex(0);
 
@@ -96,6 +99,7 @@ void SettingsDialog::changeEvent(QEvent *e)
 
 void SettingsDialog::initConnections() const
 {
+  connect(m_flexbar, &FlexbarSettingsWidget::edited, this, &SettingsDialog::setButtonBoxEnabledButtons);
   connect(m_buttonBox, &SettingsDialogButtonBox::accepted, this, &SettingsDialog::accept);
   connect(m_buttonBox, &SettingsDialogButtonBox::rejected, this, &QDialog::reject);
   connect(m_buttonBox, &SettingsDialogButtonBox::reset, this, &SettingsDialog::loadFromConfig);
@@ -220,6 +224,7 @@ void SettingsDialog::updateText()
 
 void SettingsDialog::accept()
 {
+  m_flexbar->save();
   Settings::setValue(Settings::Core::Port, ui->sbPort->value());
   Settings::setValue(Settings::Core::Interface, ui->comboInterface->currentData());
   Settings::setValue(Settings::Log::Level, ui->comboLogLevel->currentData());
@@ -255,6 +260,7 @@ void SettingsDialog::accept()
 
 void SettingsDialog::loadFromConfig()
 {
+  m_flexbar->load();
   ui->sbPort->setValue(Settings::value(Settings::Core::Port).toInt());
   ui->comboLogLevel->setCurrentIndex(
       ui->comboLogLevel->findData(Settings::logLevelText(), Qt::UserRole, Qt::MatchFixedString)
@@ -419,6 +425,8 @@ void SettingsDialog::logLevelChanged()
 
 bool SettingsDialog::isModified() const
 {
+  if (m_flexbar->isModified())
+    return true;
   const auto processMode = Settings::value(Settings::Core::ProcessMode).value<Settings::ProcessMode>();
   const bool ignoreInterface = !m_interfaceSetOnLoad && (ui->comboInterface->currentIndex() == 0);
 
@@ -453,6 +461,8 @@ bool SettingsDialog::isModified() const
 
 bool SettingsDialog::isDefault() const
 {
+  if (m_flexbar->isModified(true))
+    return false;
   const auto processMode = Settings::defaultValue(Settings::Core::ProcessMode).value<Settings::ProcessMode>();
   const auto logLevelIndex =
       static_cast<int>(LogLevel::fromOption(Settings::defaultValue(Settings::Log::Level).toString()));
@@ -486,6 +496,7 @@ bool SettingsDialog::isDefault() const
 
 void SettingsDialog::resetToDefault()
 {
+  m_flexbar->load(true);
   ui->sbPort->setValue(Settings::defaultValue(Settings::Core::Port).toInt());
   ui->comboLogLevel->setCurrentIndex(
       static_cast<int>(LogLevel::fromOption(Settings::defaultValue(Settings::Log::Level).toString()))

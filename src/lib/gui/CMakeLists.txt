@@ -42,6 +42,8 @@ add_library(${target} STATIC
   config/ServerConfig.h
   core/CoreProcess.cpp
   core/CoreProcess.h
+  core/FlexbarManager.cpp
+  core/FlexbarManager.h
   core/NetworkMonitor.cpp
   core/NetworkMonitor.h
   dialogs/AboutDialog.cpp
@@ -96,6 +98,8 @@ add_library(${target} STATIC
   validators/IpAddressValidator.cpp
   validators/IpAddressValidator.h
   widgets/FingerprintPreview.cpp
+  widgets/FlexbarSettingsWidget.cpp
+  widgets/FlexbarSettingsWidget.h
   widgets/FingerprintPreview.h
   widgets/KeySequenceWidget.cpp
   widgets/KeySequenceWidget.h

@@ -18,6 +18,7 @@
 #include "VersionChecker.h"
 #include "config/ServerConfig.h"
 #include "gui/core/CoreProcess.h"
+#include "gui/core/FlexbarManager.h"
 #include "gui/core/NetworkMonitor.h"
 #include "net/Fingerprint.h"
 
@@ -172,6 +173,7 @@ private:
   bool m_clientErrorVisible = false;
   ServerConfig m_serverConfig;
   deskflow::gui::CoreProcess m_coreProcess;
+  deskflow::gui::FlexbarManager m_flexbar;
   QSet<QString> m_ignoredClients;
   bool m_newClientPromptShowing = false;
   bool m_serverConfigDialogVisible = false;
