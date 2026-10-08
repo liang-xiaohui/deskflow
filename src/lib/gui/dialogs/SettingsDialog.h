@@ -8,6 +8,8 @@
 
 #pragma once
 #include <QDialog>
+#include <QMap>
+#include <QVariant>
 
 #include "gui/config/ServerConfig.h"
 
@@ -29,6 +31,7 @@ public:
   void extracted();
   SettingsDialog(QWidget *parent, const ServerConfig &serverConfig, deskflow::gui::FlexbarManager *flexbar = nullptr);
   ~SettingsDialog() override;
+  bool requiresCoreRestart() const { return m_coreSettingsEdited; }
 
 Q_SIGNALS:
   void requestRemoveAllSettings();
@@ -86,10 +89,13 @@ private:
    * Enable / Disable the button box buttons based on the state of the gui
    */
   void setButtonBoxEnabledButtons() const;
+  QMap<QObject *, QVariant> controlValues() const;
 
   bool m_interfaceSetOnLoad = false;
   std::unique_ptr<Ui::SettingsDialog> ui;
   const ServerConfig &m_serverConfig;
   SettingsDialogButtonBox *m_buttonBox = nullptr;
   deskflow::gui::FlexbarSettingsWidget *m_flexbar = nullptr;
+  QMap<QObject *, QVariant> m_initialControls;
+  bool m_coreSettingsEdited = false;
 };

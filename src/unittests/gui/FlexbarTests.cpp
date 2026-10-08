@@ -67,6 +67,7 @@ private Q_SLOTS:
     SettingsDialog saved(nullptr, config);
     saved.findChild<QCheckBox *>("cbFlexbarEnabled")->setChecked(true);
     saved.findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
+    QVERIFY(!saved.requiresCoreRestart());
     Settings::save(false);
     QSettings disk(Settings::settingsFile(), QSettings::IniFormat);
     QVERIFY(disk.value(Settings::Flexbar::Enabled).toBool());
@@ -85,6 +86,26 @@ private Q_SLOTS:
       QCoreApplication::processEvents();
       QVERIFY(restored.grab().save(screenshots + "/flexbar-settings.png"));
     }
+    Settings::setValue(Settings::Flexbar::Enabled, false);
+  }
+
+  void onlyRealNonFlexbarEditsRestartCore()
+  {
+    ServerConfig config;
+    SettingsDialog reverted(nullptr, config);
+    auto *checkbox = reverted.findChild<QCheckBox *>("cbPreventSleep");
+    QVERIFY(checkbox);
+    const auto original = checkbox->isChecked();
+    checkbox->setChecked(!original);
+    checkbox->setChecked(original);
+    reverted.findChild<QCheckBox *>("cbFlexbarEnabled")->setChecked(true);
+    reverted.findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
+    QVERIFY(!reverted.requiresCoreRestart());
+    SettingsDialog changed(nullptr, config);
+    changed.findChild<QCheckBox *>("cbPreventSleep")->setChecked(!original);
+    changed.findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->click();
+    QVERIFY(changed.requiresCoreRestart());
+    Settings::setValue(Settings::Core::PreventSleep, original);
     Settings::setValue(Settings::Flexbar::Enabled, false);
   }
 

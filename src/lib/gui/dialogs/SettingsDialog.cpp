@@ -86,6 +86,7 @@ SettingsDialog::SettingsDialog(QWidget *parent, const ServerConfig &serverConfig
 
   setButtonBoxEnabledButtons();
   initConnections();
+  m_initialControls = controlValues();
 }
 
 void SettingsDialog::changeEvent(QEvent *e)
@@ -224,6 +225,7 @@ void SettingsDialog::updateText()
 
 void SettingsDialog::accept()
 {
+  m_coreSettingsEdited = controlValues() != m_initialControls;
   m_flexbar->save();
   Settings::setValue(Settings::Core::Port, ui->sbPort->value());
   Settings::setValue(Settings::Core::Interface, ui->comboInterface->currentData());
@@ -256,6 +258,26 @@ void SettingsDialog::accept()
   Settings::setValue(Settings::Core::ProcessMode, mode);
 
   QDialog::accept();
+}
+
+QMap<QObject *, QVariant> SettingsDialog::controlValues() const
+{
+  QMap<QObject *, QVariant> values;
+  for (auto *widget : ui->tabWidget->findChildren<QWidget *>()) {
+    if (widget == m_flexbar || m_flexbar->isAncestorOf(widget))
+      continue;
+    if (auto *button = qobject_cast<QAbstractButton *>(widget); button && button->isCheckable())
+      values.insert(widget, button->isChecked());
+    else if (auto *edit = qobject_cast<QLineEdit *>(widget))
+      values.insert(widget, edit->text());
+    else if (auto *combo = qobject_cast<QComboBox *>(widget))
+      values.insert(widget, QVariantList{combo->currentIndex(), combo->currentData(), combo->currentText()});
+    else if (auto *spin = qobject_cast<QSpinBox *>(widget))
+      values.insert(widget, spin->value());
+    else if (auto *group = qobject_cast<QGroupBox *>(widget); group && group->isCheckable())
+      values.insert(widget, group->isChecked());
+  }
+  return values;
 }
 
 void SettingsDialog::loadFromConfig()

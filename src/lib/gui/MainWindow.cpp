@@ -510,18 +510,11 @@ void MainWindow::openGetNewVersionUrl() const
 
 void MainWindow::openSettings()
 {
-  QVariantMap previous;
-  for (const auto &key : Settings::validKeys()) {
-    if (!key.startsWith(QStringLiteral("flexbar/")))
-      previous.insert(key, Settings::value(key));
-  }
   auto dialog = SettingsDialog(this, m_serverConfig, &m_flexbar);
 
   connect(&dialog, &SettingsDialog::requestRemoveAllSettings, this, &MainWindow::clearSettings, Qt::UniqueConnection);
   if (dialog.exec() == QDialog::Accepted) {
-    bool coreSettingsChanged = false;
-    for (auto entry = previous.cbegin(); entry != previous.cend(); ++entry)
-      coreSettingsChanged = coreSettingsChanged || Settings::value(entry.key()) != entry.value();
+    const bool coreSettingsChanged = dialog.requiresCoreRestart();
     Settings::save(coreSettingsChanged);
     disconnect(&dialog, &SettingsDialog::requestRemoveAllSettings, nullptr, nullptr);
 
