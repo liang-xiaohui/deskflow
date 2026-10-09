@@ -181,9 +181,20 @@ private Q_SLOTS:
     QTRY_VERIFY_WITH_TIMEOUT(manager.status().value("running").toBool(), 3000);
     manager.restart();
     QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(m_directory.filePath("stops")), 3000);
-    QTRY_VERIFY_WITH_TIMEOUT(manager.status().value("running").toBool(), 3000);
+    // The old status can remain visible while restart drains the first child.
+    QTRY_VERIFY_WITH_TIMEOUT(
+        manager.status().value("running").toBool() && manager.statusText().contains("Running"), 3000
+    );
     manager.configure(false, options);
     QTRY_VERIFY_WITH_TIMEOUT(manager.status().isEmpty(), 3000);
+    // Wait for the owned child to finish writing its exit marker.
+    QTRY_VERIFY_WITH_TIMEOUT(
+        [&] {
+          QFile marker(m_directory.filePath("stops"));
+          return marker.open(QIODevice::ReadOnly) && marker.readAll() == QByteArray("stop\nstop\n");
+        }(),
+        3000
+    );
     QFile stopped(m_directory.filePath("stops"));
     QVERIFY(stopped.open(QIODevice::ReadOnly));
     QCOMPARE(stopped.readAll(), QByteArray("stop\nstop\n"));
