@@ -6,7 +6,7 @@ name: Continuous Integration
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     tags:
       - "v*"
   pull_request:
@@ -272,11 +272,11 @@ jobs:
 
       - name: Configure
         env:
-          APPLE_CODESIGN_DEV: ${{ ((github.ref == 'refs/heads/master') || (contains(github.ref, '/tags/v'))) && secrets.APPLE_CODESIGN_DEV || '' }}
+          APPLE_CODESIGN_DEV: ${{ ((github.ref == 'refs/heads/main') || (contains(github.ref, '/tags/v'))) && secrets.APPLE_CODESIGN_DEV || '' }}
         run: ${{env.CMAKE_CONFIGURE}} ${{ matrix.target.config-args }} ${{ steps.get-deps.outputs.vcpkg-cmake-config }} -DPACKAGE_VERSION_LABEL="${{env.DESKFLOW_PACKAGE_VERSION}}"
 
       - name: Import code-signing certificate
-        if: runner.os == 'macOS' && ((github.ref == 'refs/heads/master') || (contains(github.ref, '/tags/v')))
+        if: runner.os == 'macOS' && ((github.ref == 'refs/heads/main') || (contains(github.ref, '/tags/v')))
         uses: ./.github/actions/codesign-keychain
         with:
           action: import
@@ -320,7 +320,7 @@ jobs:
           fi
 
       - name: Notarize (macOS)
-        if: runner.os == 'macOS' && ((github.ref == 'refs/heads/master') || (contains(github.ref, '/tags/v')))
+        if: runner.os == 'macOS' && ((github.ref == 'refs/heads/main') || (contains(github.ref, '/tags/v')))
         shell: bash
         env:
           APPLE_NOTARIZE_ID: ${{ secrets.APPLE_NOTARIZE_ID }}
@@ -342,7 +342,7 @@ jobs:
           xcrun stapler staple build/deskflow[-_]*.dmg
 
       - name: Clean up keychain
-        if: always() && runner.os == 'macOS' && ((github.ref == 'refs/heads/master') || (contains(github.ref, '/tags/v')))
+        if: always() && runner.os == 'macOS' && ((github.ref == 'refs/heads/main') || (contains(github.ref, '/tags/v')))
         uses: ./.github/actions/codesign-keychain
         with:
           action: cleanup
@@ -368,7 +368,7 @@ jobs:
           like: ${{ matrix.target.like }}
 
       - name: Update Development Documentation
-        if: matrix.target.like == 'arch' && github.ref == 'refs/heads/master'
+        if: matrix.target.like == 'arch' && github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -466,7 +466,7 @@ jobs:
 
   release:
     needs: ci-passed
-    if: (github.ref == 'refs/heads/master') || (contains(github.ref, '/tags/v'))
+    if: (github.ref == 'refs/heads/main') || (contains(github.ref, '/tags/v'))
     runs-on: ubuntu-latest
 
     steps:
@@ -491,13 +491,13 @@ jobs:
           echo -e "## Latest Changes:\n$changes" > changelog.txt
 
       - name: Update continuous tag
-        if: (github.ref == 'refs/heads/master') && !(contains(github.ref, '/tags/v'))
+        if: (github.ref == 'refs/heads/main') && !(contains(github.ref, '/tags/v'))
         run: gh release delete continuous --cleanup-tag
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
       - name: Deploy continuous
-        if: (github.ref == 'refs/heads/master') && !(contains(github.ref, '/tags/v'))
+        if: (github.ref == 'refs/heads/main') && !(contains(github.ref, '/tags/v'))
         uses: softprops/action-gh-release@v3
         with:
           token: "${{ secrets.GITHUB_TOKEN }}"

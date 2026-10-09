@@ -2,6 +2,8 @@
 
 Flexbar 是 Deskflow 的可选用户会话模块。设置中的 Flexbar 标签提供启用开关、运行状态、检查连接和重启模块。新安装默认关闭；保存后才生效，取消和重置不启动后台。
 
+2026-10-09 起，Deskflow 与 Flexbar-Companion 两个仓库的 Mac / Windows 开发统一在 `main` 接续。原 `master`、键鼠随动分支和 Companion 平台分支保留历史，已合入的代码不再分头维护；同步使用 `git pull --ff-only`。源码主线调整不会替换正在运行的应用、插件或私有配置。
+
 ## 生命周期
 
 - 开启后随 Deskflow GUI 运行；缩到托盘不停止，真正退出时停止本模块。Flexbar 不由系统权限的 Deskflow Daemon 承载。
