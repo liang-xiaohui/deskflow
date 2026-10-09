@@ -42,3 +42,17 @@ Windows：`node agent.mjs start --managed --data <private-directory>`。父进�
 `FlexbarTests` 覆盖默认关闭、保存/取消/重置、实际本地 socket、协议错误、子进程停止/重启/启动中取消、缺包与中文界面。`SettingsTests` 和 `InputModeTests` 检查既有设置及键鼠模式。Companion 宿主测试另覆盖单控制者、权限、管理租期、启动中断线与真实 SDK 生命周期缓存。
 
 测试使用隔离设置和虚构进程，不向真实电脑发送控制动作。实机部署必须另外确认两端启停、旧实例迁移、页面持久化、断线撤权和权限有效性。
+
+## 实机验收记录（2026-10-09）
+
+Mac 已安装 `8ed296f9f` 的配套 GUI 和 Core，搭配 Companion `ea7be29` 的 0.2.0 宿主插件。保留原签名身份、系统权限、配对文件、布局及左右侧键配置。
+
+- 用户确认进入紫色“双机工作台”后画面恢复；同时读取到真实 SDK `pageActive=true`，不是模拟激活。
+- 真正退出 Deskflow 后，宿主报告 `disabled`，远程服务停止监听；重新启动时启用开关保留，已激活页面自动恢复，无须再次点设备入口。
+- 在实际偏好设置中关闭、保存，再启用、保存，键鼠 Core 始终为同一进程。关闭时远程服务和侧键 Home socket 停止，重新启用后恢复既有配对、上次导航和设备页面。
+- “重启模块”同样不重启键鼠 Core；恢复后的绘制错误为 0，原生 helper 报告就绪。
+- `FlexbarTests`、`SettingsTests`、`InputModeTests` 三组通过；Companion 宿主 44 项、原生模块 11 项通过。
+
+上述页面恢复以 FlexDesigner 及其真实 SDK 页面仍然存活为前提，不代表冷启动或 USB 重连自动进入已验收。独立旧版 `com.dot.touchbarbridge` 不属于受管宿主；迁移时停止它，避免重复捕获，不应把它的进程计入受管模块启停结果。若重启 FlexDesigner 使旧插件自行启动，应单独停用旧插件，不能用 Deskflow 开关关闭其他插件。
+
+部署时须同时更新 Deskflow GUI 和 Core：旧 Core 不认识 `flexbar` 配置组，会在清理设置时删除它。仅替换 GUI 不属于兼容部署。
