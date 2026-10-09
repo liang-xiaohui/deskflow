@@ -27,6 +27,14 @@ Windows 需要支持受管接口的 Companion agent 包及配套 native helper�
 
 从实验版迁移时，先正常停止旧手动 Windows agent，保留私有数据目录；安装兼容的受管 Mac 插件，再在两端 Deskflow 中启用。不会自动接管不属于自己的旧进程。保留旧程序和布局备份，但不能同时运行新旧宿主。
 
+### Windows 已启用但设备显示未连接
+
+键鼠 Core 连接成功不等于 Flexbar agent 连接成功。先查看 Deskflow 的 Flexbar 状态：若提示后台未安装，说明开关已保存，但尚未启动 agent。开关不会自动下载或安装运行包。
+
+安装包未放在默认 `flexbar/agent.mjs` 时，须在高级设置填写已有 Node 程序、受管 agent 入口和既有私有数据目录的绝对路径，再保存。旧原型若从隔离环境启动，实际配对目录可能位于该环境的 LocalCache，而非普通进程看到的默认 LocalAppData；应使用已有配对的实际目录，不能为消除错误重新配对或覆盖业务状态。
+
+修复后应同时确认 agent 是 Deskflow 创建的 `--managed` 子进程、原配对连接恢复，以及 Mac 端 `connected=true`。仅勾选开关或手动运行另一个 agent 不算接管成功。
+
 ## 本地管理接口
 
 仅用于父进程管理，不传业务内容、截图、触摸坐标或凭据，不支持任意执行。
@@ -56,3 +64,15 @@ Mac 已安装 `8ed296f9f` 的配套 GUI 和 Core，搭配 Companion `ea7be29` �
 上述页面恢复以 FlexDesigner 及其真实 SDK 页面仍然存活为前提，不代表冷启动或 USB 重连自动进入已验收。独立旧版 `com.dot.touchbarbridge` 不属于受管宿主；迁移时停止它，避免重复捕获，不应把它的进程计入受管模块启停结果。若重启 FlexDesigner 使旧插件自行启动，应单独停用旧插件，不能用 Deskflow 开关关闭其他插件。
 
 部署时须同时更新 Deskflow GUI 和 Core：旧 Core 不认识 `flexbar` 配置组，会在清理设置时删除它。仅替换 GUI 不属于兼容部署。
+
+Windows 已部署同一产品提交的 GUI、Core 和 Daemon，受管 agent 使用 Companion `2426eed`。2026-10-09 重启后发现已开启开关但高级路径为空，默认安装位置又没有 agent，因而没有启动后台；补齐已有运行包入口和原配对的实际私有目录后恢复，没有重新配对。
+
+北京时间 08:34:33，Mac 端确认 `connected=true`、`owner=windows`、`pageActive=true`、`actionsGranted=true`，绘制错误为 0。用户随后确认 Windows 页面和点击均正常；宿主记录到 8 次业务动作、1 次侧键 Home 请求被接受，无拒绝。这是本轮真实硬件结果，与 Windows 的隔离自动化测试分开记录。
+
+Windows 随后完成真实生命周期验收：
+
+- 关闭 Flexbar 后，agent 及其自有 worker 全部退出、待处理请求为 0，键鼠 Core PID 保持不变；重新启用恢复配对连接。
+- 真正退出 Deskflow 后，agent、Core 及自有 worker 正常清理。重新打开 Deskflow 后，持久化设置自动启动唯一的 `--managed` 子进程，父进程为 Deskflow，无须再手动运行后台。
+- Mac 侧分别在北京时间 08:38:01 和 08:38:43 观察到两轮重连恢复；最终保留 Windows 控制就绪、待处理请求为 0、绘制错误为 0 的启用状态。
+
+这是应用启停与真实双端接管验收，不是配置完成后的整机重启测试，也不代表已新增系统开机项。下次打开 Deskflow 会按保存的开关管理后台；FlexDesigner 冷启动后的设备入口仍遵循前述边界。
